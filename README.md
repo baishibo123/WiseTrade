@@ -2,6 +2,16 @@
 
 A lightweight, from-scratch, event-driven backtesting framework.
 
+## To-do list
+- engine 49:50 strategy.portfolio = portfolio may split functionality depending on trade off 
+- base.py 31, 44 Check if that is essential that ABC Strategy have the att self.bar while calling next() with bar parameter. 
+- engine 76:81 should place the Feed empty detection before traversing the bars. preventing further anomaly
+- Portfolio att position: further make it feasible for multiple symbols in the same portfolio for easier analysis
+- Portfolio 47:49   adding broker feature which will including commission fee. 
+- Portfolio: design to decide: update() should make sure excluding price changes within the bar but outside the action range (before buy, after sell)
+
+
+
 ## Elevator Pitch
 A clean, readable, high-performance backtesting system built entirely with standard Python libraries — no external backtesting packages — designed for research, coursework, and real quantitative experiments.
 

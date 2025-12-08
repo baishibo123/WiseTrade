@@ -56,15 +56,15 @@ class Engine:
         bar_count = 0
         for bar in self.feed:
             bar_count += 1
-            strategy.bar = bar  # convenience for strategy code
             last_bar = bar
+            strategy.update_bar(bar)
             # Strategy decides what to do with this bar
             strategy.next(bar)
 
             # Update equity using latest close price
             portfolio.update(bar)
 
-            # Optional: progress logging every 100k bars
+            # heads-up logging every 100k bars
             if bar_count % 100_000 == 0:
                 dt_str = datetime.utcfromtimestamp(bar.datetime / 1000).strftime("%Y-%m-%d %H:%M")
                 logging.info(
@@ -73,8 +73,8 @@ class Engine:
                 )
 
         #Safety: if feed was empty, set a dummy bar so on_end() can close position
-        if bar_count == 0 and strategy.bar is None:
-            logging.warning(f"No data for {self.feed.symbol} in date range")
+        if bar_count == 0 and last_bar is None:
+            logging.warning(f"No data for {symbol} in date range")
             # Optionally: create a dummy bar with price=0 or skip
         else:
             # on_end() may want to close position — it can use strategy.bar safely
@@ -106,11 +106,11 @@ class Engine:
         cls,
         symbols: List[str],
         strategy_class: Type[Strategy],
-        start_datetime: int,
+        start_datetime: int,    # designated to run different symbols on the same time frame
         end_datetime: int,
         strategy_params: Optional[Dict[str, Any]] = None,
         initial_cash: float = 100_000.0,
-        min_trade_size: float = 1.0,
+        min_trade_size: float = 0.1,
         show_progress: bool = True
     ) -> Dict[str, Analyzer]:
         """

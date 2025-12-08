@@ -59,7 +59,7 @@ class SQLiteFeed(BaseFeed):
             where_conditions.append("datetime <= ?")
             params.append(self.end_datetime)
 
-        where_clause = " AND " + " AND ".join(where_conditions) if len(where_conditions) > 1 else where_conditions[0]
+        where_clause = " AND ".join(where_conditions)
 
         query = f"""
             SELECT symbol, datetime, open, high, low, close, volume

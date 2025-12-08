@@ -9,6 +9,7 @@ from database.schema import Bar
 class Portfolio:
     """
     Simple but realistic single-asset portfolio
+    - Conduct trades
     - Tracks cash, position, equity over time
     - Records full trade log (for win rate, etc.)
     - Records equity curve every bar (for drawdown, Sharpe)
@@ -17,8 +18,7 @@ class Portfolio:
 
 
     def __init__(self, initial_cash: float = 100_000.0, min_trade_size: float = 0.1):
-        self.min_trade_size = float(min_trade_size)
-
+        self.min_trade_size = float(min_trade_size) # US brokers normally allow 0.1 share split
         self.initial_cash = float(initial_cash)
 
         # Current state
@@ -34,7 +34,7 @@ class Portfolio:
     # 1. Order execution
     # ------------------------------------------------------------------
     def buy(self, size: float, price: float) -> None:
-        if size <= 0 or price <= 0:
+        if size <= 0 or price <= 0: # Ignore invalid signals
             return
 
         max_affordable = self.cash / price if price > 0 else 0.0
@@ -97,7 +97,7 @@ class Portfolio:
         Returns current total equity
         """
         if self.position > 0:
-            position_value = self.position * bar.close
+            position_value = self.position * bar.close  # should pay attention this automatically include close price
         else:
             position_value = 0.0
 
