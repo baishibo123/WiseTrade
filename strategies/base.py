@@ -37,8 +37,7 @@ class Strategy(ABC):
         # should be stored.
         # "maxlen" automatically drops old data when new data is appended.
         self._lookback = self.params.get('max_lookback', 300)
-        self.history: Deque[float] = deque(maxlen=self._lookback)
-        self.timestamps: Deque[float] = deque(maxlen=self._lookback)
+        self.history: Deque = deque(maxlen=self._lookback)
 
 
     # ------------------------------------------------------------------
@@ -56,8 +55,7 @@ class Strategy(ABC):
         Helper: Must be called at the start of next() to update history.
         """
         self.bar = bar
-        self.history.append(bar.close)
-        self.timestamps.append(bar.datetime)
+        self.history.append(bar)
 
     @abstractmethod
     def next(self, bar: Bar) -> None:
@@ -83,6 +81,41 @@ class Strategy(ABC):
         """Safe access to self.params"""
         return self.params.get(name, default)
 
+    # --- Helpers ---
+    def sma(self, period: int) -> Optional[float]:
+        """Calculates SMA using the .close attribute of stored bars."""
+        if len(self.history) < period:
+            return None
+        # Extract closing prices from the last N bars
+        closes = [b.close for b in list(self.history)[-period:]]
+        return statistics.mean(closes)
+
+    def atr(self, period: int) -> Optional[float]:
+        """
+        Calculates Average True Range (ATR).
+        Logic: Average of the True Ranges over N periods.
+        """
+        if len(self.history) < period + 1:
+            return None
+
+        # We need the last N+1 bars to calculate N True Ranges
+        # (because TR requires previous close)
+        recent_bars = list(self.history)[-(period + 1):]
+        true_ranges = []
+
+        for i in range(1, len(recent_bars)):
+            curr = recent_bars[i]
+            prev = recent_bars[i - 1]
+
+            # TR = Max(High-Low, |High-PrevClose|, |Low-PrevClose|)
+            val1 = curr.high - curr.low
+            val2 = abs(curr.high - prev.close)
+            val3 = abs(curr.low - prev.close)
+
+            true_ranges.append(max(val1, val2, val3))
+
+        return statistics.mean(true_ranges)
+
     # ------------------------------------------------------------------
     # Optional: convenience properties
     # ------------------------------------------------------------------
@@ -93,14 +126,3 @@ class Strategy(ABC):
 
     def __str__(self) -> str:
         return f"{self.name}({self.params})"
-
-    # --- Lightweight Indicator Helpers ---
-
-    def sma(self, period: int) -> Optional[float]:
-        """Calculates SMA on the fly from self.history."""
-        if len(self.history) < period:
-            return None
-        # Optimization: accessing the last 'period' items of a deque
-        # is faster via list slicing if converted, but for small N, standard iteration is fine.
-        # We slice the last N items.
-        return statistics.mean(list(self.history)[-period:])

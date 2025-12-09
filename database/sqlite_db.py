@@ -8,7 +8,7 @@ from tqdm import tqdm
 import logging
 
 from config import RAW_DATA_ROOT, SQLITE_DB_PATH
-from schema import SQLITE_CREATE_TABLE, Bar
+from .schema import SQLITE_CREATE_TABLE, Bar
 
 # ----------------------------------------------------------------------
 # Your exact TECH_100 universe — only these symbols will be loaded
@@ -34,7 +34,7 @@ TECH_100 = {
     "CSCO", "DELL", "HPQ", "HPE", "GLW", "STX", "WDC", "NTAP", "SMCI",
     "PSTG", "IONQ",
     # Fintech / Payments
-    "V", "MA", "PYPL", "SQ", "FIS", "FISV", "GPN", "AFRM", "TOST"
+    "V", "MA", "PYPL", "FIS", "FISV", "GPN", "AFRM", "TOST"
 }
 
 

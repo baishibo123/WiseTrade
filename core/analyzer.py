@@ -129,6 +129,9 @@ class Analyzer:
     # ------------------------------------------------------------------
     @property
     def metrics(self) -> Dict[str, Any]:
+        self._metrics["symbol"] = self.symbol
+        self._metrics["strategy"] = self.strategy_name
+        self._metrics["bar_count"] = self.bar_count
         return self._metrics.copy()
 
     @property
@@ -144,7 +147,7 @@ class Analyzer:
         return pd.DataFrame([data])
 
     def print_summary(self) -> None:
-        m = self._metrics
+        m = self.metrics
         print(f"\n{'=' * 60}")
         print(f" BACKTEST RESULT: {m.get('symbol', 'N/A')} | {m.get('strategy', 'Strategy')}")
         print(f"{'=' * 60}")

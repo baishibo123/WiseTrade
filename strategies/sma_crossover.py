@@ -5,8 +5,12 @@ class SMACrossover(Strategy):
     def __init__(self, params=None):
         super().__init__(params)
         self.fast_period = self.get_param('fast', 10)
-        self.slow_period = self.get_param('slow', 30)
-        self.qty = 0.5  # Fixed trade size example (respecting min > 0.1)
+        self.slow_period = self.get_param('slow', 20)
+        self.qty = 100  # Fixed trade size
+
+        # State tracking for "Fresh Cross"
+        # We initialize as None so we don't trigger a trade on the very first bar
+        self.prev_bullish = None
 
     def next(self, bar):
         # 1. CRITICAL: Update history first
@@ -20,20 +24,31 @@ class SMACrossover(Strategy):
         if sma_fast is None or sma_slow is None:
             return
 
-        # 3. Trading Logic
-        # We need the PREVIOUS values to detect a "Cross".
-        # Since self.history is updated, self.sma() returns CURRENT SMA.
-        # This is a simplified "State" check (Fast > Slow = Bullish).
-        # For a true "Crossover" (change of state), we would store 'prev_state'.
+        # 3. Determine Market State
+        is_bullish = sma_fast > sma_slow
 
-        current_pos = self.portfolio.positions.get("TECH_100", 0)
+        # Initialize state on the very first valid bar without trading
+        if self.prev_bullish is None:
+            self.prev_bullish = is_bullish
+            return
 
-        # Golden Cross (Fast is above Slow) -> Long
-        if sma_fast > sma_slow:
-            if current_pos == 0:
-                self.portfolio.buy("TECH_100", bar.close, self.qty)
+        # 4. Trading Logic
 
-        # Death Cross (Fast is below Slow) -> Close Position
-        elif sma_fast < sma_slow:
+        # Get current position size (Float)
+        current_pos = self.portfolio.position
+
+        # --- BUY LOGIC ---
+        # Condition 1: Must be a FRESH cross (Currently Bullish, Previously Not)
+        if is_bullish and not self.prev_bullish:
+            # Condition 2: If holding positions, do not trigger another buying
+            if current_pos < 0.1:
+                self.portfolio.buy(self.qty, bar.close)
+
+        # --- SELL LOGIC ---
+        # Condition: Fresh Death Cross (Currently Not Bullish, Previously Bullish)
+        elif not is_bullish and self.prev_bullish:
             if current_pos > 0:
-                self.portfolio.sell("TECH_100", bar.close, current_pos)
+                self.portfolio.sell(current_pos, bar.close)
+
+        # 5. Update State for next bar
+        self.prev_bullish = is_bullish
