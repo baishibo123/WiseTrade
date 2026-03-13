@@ -1,128 +1,340 @@
-# strategies/base.py
-from typing import Any, Dict, Optional, Deque
+"""
+Base class for multi-symbol strategies
+Maintains per-symbol history and provides signal generation framework
+"""
+
 from abc import ABC, abstractmethod
+from typing import Dict, List, Optional, Any, Deque
 from collections import deque
-import statistics
+import logging
 
 from database.schema import Bar
-from core.portfolio import Portfolio
+from strategies.indicators import *  # Import all indicator functions
 
 
 class Strategy(ABC):
     """
-    Abstract base class for all trading strategies, to be modified for complex strategies
+    Base class for multi-symbol strategies
 
-    User must implement:
-        - next(bar: Bar) → where all logic lives
+    Responsibilities:
+    - Maintain per-symbol bar history
+    - Calculate indicators (override _update_indicators)
+    - Generate signals based on current market state
 
-    Optional overrides:
-        - on_start()     → called once at beginning
-        - on_end()       → called once at end
+    Lifecycle:
+    1. __init__: Strategy configuration
+    2. on_start: Called once before backtest
+    3. update_bar: Called for each bar (updates history & indicators)
+    4. next: Called after all symbols updated (generates signals)
+    5. on_end: Called once after backtest (cleanup, final exits)
 
-    Strategy has full access to:
-        self.portfolio   → buy(), sell(), sell_all(), cash, position, etc.
-        self.bar         → current bar (convenience)
+    Usage:
+        class MyStrategy(Strategy):
+            def _update_indicators(self, symbol: str):
+                # Calculate indicators for this symbol
+                closes = self.get_closes(symbol)
+                self._indicators[symbol]["sma_20"] = calculate_sma(closes, 20)
+
+            def next(self, bars: Dict[str, Bar]) -> Dict[str, dict]:
+                signals = {}
+                for symbol, bar in bars.items():
+                    sma = self._indicators[symbol].get("sma_20")
+                    if sma and bar.close > sma:
+                        signals[symbol] = {"action": "BUY", "score": 0.8, "quantity": 10.0}
+                return signals
     """
 
-    def __init__(self, params: Optional[Dict[str, Any]] = None):
+    def __init__(
+            self,
+            universe: List[str],
+            params: Optional[Dict[str, Any]] = None
+    ):
         """
-        params: dictionary of strategy parameters
+        Initialize strategy
+
+        Args:
+            universe: List of symbols to track
+            params: Strategy parameters (e.g., lookback periods, thresholds)
         """
+        self.universe = universe
         self.params = params or {}
-        self.portfolio: Optional[Portfolio] = None
-        self.bar: Optional[Bar] = None  # current bar (set by Engine)
+        self.portfolio = None  # Will be injected by Engine
 
-        # Event - Driven Data Series
-        # To calculate whether the conditions are fulfilled or not, some history data
-        # should be stored.
-        # "maxlen" automatically drops old data when new data is appended.
+        # Per-symbol bar history
         self._lookback = self.params.get('max_lookback', 300)
-        self.history: Deque = deque(maxlen=self._lookback)
+        self.history: Dict[str, Deque[Bar]] = {
+            symbol: deque(maxlen=self._lookback) for symbol in universe
+        }
 
+        # Per-symbol indicators (cached values)
+        self._indicators: Dict[str, Dict[str, Any]] = {
+            symbol: {} for symbol in universe
+        }
 
-    # ------------------------------------------------------------------
-    # Lifecycle methods — called by Engine
-    # ------------------------------------------------------------------
-    def on_start(self) -> None:
+        # Strategy metadata
+        self.name = self.__class__.__name__
+
+        logging.info(
+            f"Strategy '{self.name}' initialized: "
+            f"{len(universe)} symbols, lookback={self._lookback}"
+        )
+
+    # ========================================================================
+    # Lifecycle Hooks
+    # ========================================================================
+
+    def on_start(self):
         """
-        Called once before the first bar
-        Use for: indicator initialization, warm-up, logging
+        Called once before backtest starts
+
+        Override to perform initialization (e.g., load reference data)
         """
         pass
 
-    def update_bar(self, bar) -> None:
+    def on_end(self) -> Optional[Dict[str, dict]]:
         """
-        Helper: Must be called at the start of next() to update history.
+        Called once after backtest ends
+
+        Override to perform cleanup or force-close positions
+
+        Returns:
+            Optional signals dict (e.g., to close all positions)
         """
-        self.bar = bar
-        self.history.append(bar)
+        # Default: close all open positions
+        if self.portfolio and self.portfolio.positions:
+            logging.info(f"Strategy '{self.name}' ending: closing {len(self.portfolio.positions)} positions")
+            return {
+                symbol: {"action": "SELL", "score": 1.0}
+                for symbol in self.portfolio.positions.keys()
+            }
+        return None
+
+    # ========================================================================
+    # Bar Processing
+    # ========================================================================
+
+    def update_bar(self, symbol: str, bar: Bar):
+        """
+        Update history and indicators for a single symbol
+
+        Called by Engine for each bar before next()
+
+        Args:
+            symbol: Symbol ticker
+            bar: Current bar data
+        """
+        # Add bar to history
+        self.history[symbol].append(bar)
+
+        # Recalculate indicators for this symbol
+        self._update_indicators(symbol)
+
+    def _update_indicators(self, symbol: str):
+        """
+        Calculate/update indicators for a single symbol
+
+        Override in subclass to implement custom indicators
+        Store results in self._indicators[symbol]
+
+        Example:
+            closes = self.get_closes(symbol)
+            self._indicators[symbol]["sma_20"] = calculate_sma(closes, 20)
+            self._indicators[symbol]["rsi_14"] = calculate_rsi(closes, 14)
+        """
+        pass  # Base class has no indicators
 
     @abstractmethod
-    def next(self, bar: Bar) -> None:
+    def next(self, bars: Dict[str, Bar]) -> Dict[str, dict]:
         """
-        Called on EVERY bar
-        Calculate indicators, make buy/sell decisions here
+        Generate signals for all symbols at current timestamp
+
+        Called after all symbols' bars have been updated
+
+        Args:
+            bars: Current bars for all symbols at this timestamp
+                  Format: {symbol: Bar}
+
+        Returns:
+            Signals dict: {symbol: signal}
+
+            Signal format:
+            {
+                "action": "BUY" | "SELL" | "HOLD",
+                "score": float (0.0-1.0, for ranking),
+
+                # Optional quantity specification:
+                "quantity": float (explicit shares),
+                # OR
+                "target_allocation": float (% of portfolio, e.g., 0.10 = 10%),
+
+                # For SELL signals, optional:
+                "sell_pct": float (% of position, e.g., 0.5 = 50%)
+            }
         """
-        raise NotImplementedError("You must implement next() in your strategy")
+        pass
 
-    def on_end(self) -> None:
+    # ========================================================================
+    # Data Access Helpers
+    # ========================================================================
+
+    def get_closes(self, symbol: str, n: Optional[int] = None) -> List[float]:
         """
-        Called once after the last bar
-        Use for: final cleanup, logging results, closing positions
+        Get recent close prices for symbol
+
+        Args:
+            symbol: Symbol ticker
+            n: Number of recent bars (None = all available)
+
+        Returns:
+            List of close prices (most recent last)
         """
-        # Optional: close position at last price
-        if self.portfolio and self.bar and self.portfolio.is_long:
-            self.portfolio.sell_all(self.bar.close)
+        closes = [bar.close for bar in self.history[symbol]]
+        return closes[-n:] if n else closes
 
-    # ------------------------------------------------------------------
-    # Helper methods — make strategy code cleaner
-    # ------------------------------------------------------------------
-    def get_param(self, name: str, default: Any = None) -> Any:
-        """Safe access to self.params"""
-        return self.params.get(name, default)
-
-    # --- Helpers ---
-    def sma(self, period: int) -> Optional[float]:
-        """Calculates SMA using the .close attribute of stored bars."""
-        if len(self.history) < period:
-            return None
-        # Extract closing prices from the last N bars
-        closes = [b.close for b in list(self.history)[-period:]]
-        return statistics.mean(closes)
-
-    def atr(self, period: int) -> Optional[float]:
+    def get_opens(self, symbol: str, n: Optional[int] = None) -> List[float]:
         """
-        Calculates Average True Range (ATR).
-        Logic: Average of the True Ranges over N periods.
+        Get recent open prices for symbol
+
+        Args:
+            symbol: Symbol ticker
+            n: Number of recent bars (None = all available)
+
+        Returns:
+            List of open prices (most recent last)
         """
-        if len(self.history) < period + 1:
-            return None
+        opens = [bar.open for bar in self.history[symbol]]
+        return opens[-n:] if n else opens
 
-        # We need the last N+1 bars to calculate N True Ranges
-        # (because TR requires previous close)
-        recent_bars = list(self.history)[-(period + 1):]
-        true_ranges = []
+    def get_highs_lows(self, symbol: str, n: Optional[int] = None) -> tuple[List[float], List[float]]:
+        """
+        Get recent high and low prices for symbol
 
-        for i in range(1, len(recent_bars)):
-            curr = recent_bars[i]
-            prev = recent_bars[i - 1]
+        Args:
+            symbol: Symbol ticker
+            n: Number of recent bars (None = all available)
 
-            # TR = Max(High-Low, |High-PrevClose|, |Low-PrevClose|)
-            val1 = curr.high - curr.low
-            val2 = abs(curr.high - prev.close)
-            val3 = abs(curr.low - prev.close)
+        Returns:
+            (highs, lows) tuple of lists
+        """
+        bars = list(self.history[symbol])[-n:] if n else list(self.history[symbol])
+        highs = [bar.high for bar in bars]
+        lows = [bar.low for bar in bars]
+        return highs, lows
 
-            true_ranges.append(max(val1, val2, val3))
+    def get_volumes(self, symbol: str, n: Optional[int] = None) -> List[float]:
+        """
+        Get recent volumes for symbol
 
-        return statistics.mean(true_ranges)
+        Args:
+            symbol: Symbol ticker
+            n: Number of recent bars (None = all available)
 
-    # ------------------------------------------------------------------
-    # Optional: convenience properties
-    # ------------------------------------------------------------------
-    @property
-    def name(self) -> str:
-        """Human-readable name — override in subclass"""
-        return self.__class__.__name__
+        Returns:
+            List of volumes (most recent last)
+        """
+        volumes = [bar.volume for bar in self.history[symbol]]
+        return volumes[-n:] if n else volumes
 
-    def __str__(self) -> str:
-        return f"{self.name}({self.params})"
+    # ========================================================================
+    # Position Helpers (Pragmatic for now, may refactor later)
+    # ========================================================================
+
+    def has_position(self, symbol: str) -> bool:
+        """Check if currently holding position in symbol"""
+        return symbol in self.portfolio.positions if self.portfolio else False
+
+    def get_position_size(self, symbol: str) -> float:
+        """Get current position size (shares) for symbol"""
+        if self.portfolio and symbol in self.portfolio.positions:
+            return self.portfolio.positions[symbol].shares
+        return 0.0
+
+    def get_position_pnl(self, symbol: str, current_price: float) -> Optional[float]:
+        """
+        Get unrealized P&L for position
+
+        Args:
+            symbol: Symbol ticker
+            current_price: Current market price
+
+        Returns:
+            Unrealized P&L or None if no position
+        """
+        if self.portfolio and symbol in self.portfolio.positions:
+            return self.portfolio.positions[symbol].unrealized_pnl(current_price)
+        return None
+
+
+# ============================================================================
+# Testing utility
+# ============================================================================
+
+def test_strategy_base():
+    """
+    Test Strategy base class with mock data
+    """
+    from database.schema import Bar
+
+    print("\n=== Strategy Base Class Test ===")
+
+    # Create concrete strategy for testing
+    class TestStrategy(Strategy):
+        def _update_indicators(self, symbol: str):
+            # Calculate SMA using imported indicator function
+            closes = self.get_closes(symbol)
+            self._indicators[symbol]["sma_20"] = calculate_sma(closes, 20)
+            self._indicators[symbol]["rsi_14"] = calculate_rsi(closes, 14)
+
+        def next(self, bars: Dict[str, Bar]) -> Dict[str, dict]:
+            signals = {}
+            for symbol, bar in bars.items():
+                sma = self._indicators[symbol].get("sma_20")
+                rsi = self._indicators[symbol].get("rsi_14")
+
+                if sma and rsi:
+                    if bar.close > sma and rsi < 70:
+                        signals[symbol] = {
+                            "action": "BUY",
+                            "score": 0.8,
+                            "quantity": 10.0
+                        }
+            return signals
+
+    # Initialize strategy
+    strategy = TestStrategy(
+        universe=["AAPL", "MSFT"],
+        params={"max_lookback": 50}
+    )
+
+    # Simulate bars
+    for i in range(30):
+        price_aapl = 150.0 + i * 0.5
+        price_msft = 300.0 + i * 1.0
+
+        bars = {
+            "AAPL": Bar("AAPL", i * 1000, price_aapl, price_aapl, price_aapl + 1, price_aapl - 1, price_aapl, 1000),
+            "MSFT": Bar("MSFT", i * 1000, price_msft, price_msft, price_msft + 1, price_msft - 1, price_msft, 2000)
+        }
+
+        # Update bars
+        for symbol, bar in bars.items():
+            strategy.update_bar(symbol, bar)
+
+        # Generate signals
+        signals = strategy.next(bars)
+
+        if signals:
+            print(f"\nTimestamp {i}:")
+            for symbol, signal in signals.items():
+                print(f"  {symbol}: {signal}")
+
+    # Test data access helpers
+    print(f"\nAAPL history length: {len(strategy.history['AAPL'])}")
+    print(f"AAPL last 5 closes: {strategy.get_closes('AAPL', 5)}")
+    print(f"AAPL last 5 opens: {strategy.get_opens('AAPL', 5)}")
+
+    print("\n✓ Test complete")
+
+
+if __name__ == "__main__":
+    test_strategy_base()

@@ -1,111 +1,160 @@
+# strategies/examples/sma_os_dynamic.py
+
+"""
+SMA Optimal Stopping Strategy - Dynamic Window
+
+Entry: SMA(10) > SMA(20) [Fresh Cross]
+Exit: Optimal Stopping with Dynamic Window based on time until market close
+"""
+
+from typing import Dict, Optional
+from datetime import datetime
+from database.schema import Bar
 from strategies.base import Strategy
-import datetime
+from strategies.indicators import calculate_sma
 
 
 class SMA_OS_Dynamic(Strategy):
     """
     Entry: SMA(10) > SMA(20) [Fresh Cross]
-    Exit: Optimal Stopping with Dynamic Window.
-          Calculates N based on (Market Close Time - Current Time).
+    Exit: Optimal Stopping with Dynamic Window
+
+    Window dynamically calculated as: minutes remaining until market close
+    Only enters trades if >= 30 minutes remain in trading day
     """
 
-    def __init__(self, params=None):
-        super().__init__(params)
-        self.fast_period = 10
-        self.slow_period = 20
+    def __init__(self, universe, params=None):
+        super().__init__(universe, params)
 
-        # PARAMETER: Market Close Hour in UTC
-        # US Market Close (4:00 PM ET) is:
-        # 20:00 UTC (during Daylight Savings / Summer)
-        # 21:00 UTC (during Standard Time / Winter)
-        self.market_close_hour_utc = self.get_param('market_close_hour_utc', 21)
+        # Entry parameters
+        self.fast_period = self.params.get('fast_period', 10)
+        self.slow_period = self.params.get('slow_period', 20)
 
-        # State
-        self.window_n = 0
-        self.observation_idx = 0
-        self.bars_held = 0
-        self.max_price_obs = 0.0
-        self.prev_bullish = False
+        # Market close time (UTC)
+        # US Market Close (4:00 PM ET):
+        # - 20:00 UTC (Daylight Saving Time / Summer)
+        # - 21:00 UTC (Standard Time / Winter)
+        self.market_close_hour_utc = self.params.get('market_close_hour_utc', 21)
 
-    def next(self, bar):
-        # 1. Update History
-        self.update_bar(bar)
+        # Minimum minutes required to enter trade
+        self.min_minutes_to_trade = self.params.get('min_minutes_to_trade', 30)
 
-        # 2. Indicators
-        fast = self.sma(self.fast_period)
-        slow = self.sma(self.slow_period)
-        if fast is None or slow is None:
-            return
+        # Per-symbol state tracking
+        self._state = {
+            symbol: {
+                'window_n': 0,
+                'observation_idx': 0,
+                'bars_held': 0,
+                'max_price_obs': 0.0,
+                'prev_bullish': False
+            }
+            for symbol in universe
+        }
 
-        # 3. Position Check (Float)
-        position_size = self.portfolio.position
-        is_invested = position_size > 0.001
+    def _update_indicators(self, symbol: str):
+        """Calculate SMAs for this symbol"""
+        closes = self.get_closes(symbol)
 
-        # --- EXIT LOGIC ---
-        if is_invested:
-            self.bars_held += 1
+        self._indicators[symbol]['sma_fast'] = calculate_sma(closes, self.fast_period)
+        self._indicators[symbol]['sma_slow'] = calculate_sma(closes, self.slow_period)
 
-            force_sell = False
+    def next(self, bars: Dict[str, Bar]) -> Dict[str, dict]:
+        """
+        Generate signals based on SMA crossover + Dynamic Optimal Stopping
+        """
+        signals = {}
 
-            # Phase A: Observation
-            if self.bars_held <= self.observation_idx:
-                if bar.close > self.max_price_obs:
-                    self.max_price_obs = bar.close
+        for symbol, bar in bars.items():
+            # Get indicators
+            sma_fast = self._indicators[symbol].get('sma_fast')
+            sma_slow = self._indicators[symbol].get('sma_slow')
 
-            # Phase B: Action
-            elif self.bars_held <= self.window_n:
-                if bar.close > self.max_price_obs:
-                    self.portfolio.sell(position_size, bar.close )
-                    force_sell = False
-                    return
+            if sma_fast is None or sma_slow is None:
+                continue
 
-            # Check Time Limit
-            if self.bars_held >= self.window_n:
-                force_sell = True
+            # Get symbol state
+            state = self._state[symbol]
 
-            if force_sell:
-                self.portfolio.sell(position_size, bar.close )
+            # Check current position
+            has_position = self.has_position(symbol)
 
-        # --- ENTRY LOGIC ---
-        else:
-            is_bullish = fast > slow
+            # ================================================================
+            # EXIT LOGIC (if holding position)
+            # ================================================================
 
-            # Fresh CrossCheck
-            if is_bullish and not self.prev_bullish:
+            if has_position:
+                state['bars_held'] += 1
 
-                # 1. Calculate Dynamic Window using bar.datetime (Unix Millis)
-                minutes_remaining = self._get_minutes_to_close(bar.datetime)
+                should_exit = False
 
-                # Filter: Only trade if we have at least 30 mins left in the day
-                if minutes_remaining > 30:
-                    # Sizing: 95% of Cash
-                    qty = 100
+                # Phase A: Observation
+                if state['bars_held'] <= state['observation_idx']:
+                    if bar.close > state['max_price_obs']:
+                        state['max_price_obs'] = bar.close
 
-                    if qty >= self.portfolio.min_trade_size:
-                        self.portfolio.buy(qty, bar.close )
+                # Phase B: Selection
+                elif state['bars_held'] <= state['window_n']:
+                    # Sell if price beats benchmark
+                    if bar.close > state['max_price_obs']:
+                        should_exit = True
 
-                        # Set Dynamic Optimal Stopping Params
-                        self.window_n = minutes_remaining
-                        self.observation_idx = int(self.window_n * 0.37)
+                # Phase C: Time limit
+                if state['bars_held'] >= state['window_n']:
+                    should_exit = True
 
-                        # Reset Exit State
-                        self.bars_held = 0
-                        self.max_price_obs = -1.0
+                if should_exit:
+                    signals[symbol] = {
+                        "action": "SELL",
+                        "score": 1.0
+                    }
+                    self._reset_state(symbol)
 
-            self.prev_bullish = is_bullish
+            # ================================================================
+            # ENTRY LOGIC (if no position)
+            # ================================================================
+
+            else:
+                is_bullish = sma_fast > sma_slow
+
+                # Check for FRESH crossover
+                if is_bullish and not state['prev_bullish']:
+                    # Calculate dynamic window
+                    minutes_remaining = self._get_minutes_to_close(bar.datetime)
+
+                    # Only trade if enough time remains
+                    if minutes_remaining >= self.min_minutes_to_trade:
+                        signals[symbol] = {
+                            "action": "BUY",
+                            "score": 0.8,
+                            "quantity": 100.0
+                        }
+
+                        # Set dynamic window parameters
+                        state['window_n'] = minutes_remaining
+                        state['observation_idx'] = int(state['window_n'] * 0.37)
+                        state['bars_held'] = 0
+                        state['max_price_obs'] = bar.close
+
+                # Update state
+                state['prev_bullish'] = is_bullish
+
+        return signals
 
     def _get_minutes_to_close(self, timestamp_ms: int) -> int:
         """
-        Converts Unix Millis (UTC) to minutes remaining until Market Close (UTC).
+        Calculate minutes remaining until market close
+
+        Args:
+            timestamp_ms: Current bar timestamp (Unix milliseconds UTC)
+
+        Returns:
+            Minutes until market close (0 if already past close)
         """
-        # 1. Convert ms to seconds
+        # Convert to seconds and create datetime object
         timestamp_sec = timestamp_ms / 1000.0
+        dt_current = datetime.utcfromtimestamp(timestamp_sec)
 
-        # 2. Create UTC Datetime object
-        dt_current = datetime.datetime.utcfromtimestamp(timestamp_sec)
-
-        # 3. Create Target Close Time for THIS specific day
-        # We replace the hour with our configured close hour (e.g., 21 for 9 PM UTC)
+        # Create market close time for current day
         try:
             dt_close = dt_current.replace(
                 hour=self.market_close_hour_utc,
@@ -114,13 +163,21 @@ class SMA_OS_Dynamic(Strategy):
                 microsecond=0
             )
         except ValueError:
-            # Handle edge case: if current time is technically "tomorrow" in UTC
-            # or invalid hour, fallback to 60 mins default
+            # Fallback if invalid hour
             return 60
 
-        # 4. Calculate Delta
+        # Calculate time difference
         delta = dt_close - dt_current
         minutes = int(delta.total_seconds() / 60)
 
-        # Safety: If we are somehow PAST the close (negative), return 0
+        # Return 0 if past close time
         return max(0, minutes)
+
+    def _reset_state(self, symbol: str):
+        """Reset tracking state for a symbol"""
+        state = self._state[symbol]
+        state['window_n'] = 0
+        state['observation_idx'] = 0
+        state['bars_held'] = 0
+        state['max_price_obs'] = 0.0
+        state['prev_bullish'] = False
