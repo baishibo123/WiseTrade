@@ -8,7 +8,7 @@ DB_DIR = PROJECT_ROOT / "db"
 RESULTS_DIR = PROJECT_ROOT / "results"
 DB_DIR.mkdir(exist_ok=True)
 RESULTS_DIR.mkdir(exist_ok=True)
-SQLITE_DB_PATH = DB_DIR / "us_market_1min.sqlite"
+SQLITE_DB_PATH = DB_DIR / "us_market_1min_adjusted.sqlite"
 
 # Mongo settings (for later)
 MONGO_URI = "mongodb://localhost:27017"
