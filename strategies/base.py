@@ -28,8 +28,19 @@ class Strategy(ABC):
     4. next: Called after all symbols updated (generates signals)
     5. on_end: Called once after backtest (cleanup, final exits)
 
+    VERSIONING (ADR-004):
+        The batch backtester hashes (class name, VERSION, params, universe,
+        time range) into a deterministic run_id used for resumability. If you
+        change strategy behavior — even a one-line bug fix — bump VERSION on
+        the subclass, otherwise opt-in resume will return stale results from
+        a prior run that used the old logic. Renaming params or the class
+        also invalidates the hash automatically; only behavior changes that
+        leave the surface API alone need a manual bump.
+
     Usage:
         class MyStrategy(Strategy):
+            VERSION = "1.0"   # bump on any behavior change
+
             def _update_indicators(self, symbol: str):
                 # Calculate indicators for this symbol
                 closes = self.get_closes(symbol)
@@ -43,6 +54,8 @@ class Strategy(ABC):
                         signals[symbol] = {"action": "BUY", "score": 0.8, "quantity": 10.0}
                 return signals
     """
+
+    VERSION: str = "1.0"
 
     def __init__(
             self,

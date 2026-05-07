@@ -27,9 +27,10 @@ DEFAULT_TIMEFRAME = "1min"
 DB_TYPE = os.getenv("WISETRADE_DB_TYPE", "sqlite")
 
 # SQLite configuration (development)
+# Absolute path is required: workers spawned by multiprocessing may not share CWD.
 SQLITE_CONFIG = {
     "type": "sqlite",
-    "path": "../db/us_market_1min.sqlite"
+    "path": str(SQLITE_DB_PATH),
 }
 
 # PostgreSQL configuration (production)
