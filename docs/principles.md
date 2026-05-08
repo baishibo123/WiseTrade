@@ -23,6 +23,7 @@
 - **Verify logic against requirements. Trust my own debug ability.** I don't need to understand every line of generated code before it touches the codebase. I need to verify the logic matches the requirement. These are different tasks — mixing them degrades both.
 - **CLAUDE.md captures invariants, not current state.** Conventions, contracts, and things that must never change. Not "the portfolio currently does X." The code holds current state; CLAUDE.md holds the rules.
 - **ADR for non-obvious decisions.** When a design choice is made that won't be obvious to a future reader (or a fresh session), write a one-paragraph record: what was decided, what alternatives were considered, why this one. File in `docs/decisions.md`.
+- **Walking skeleton first, then layer by layer.** When starting implementation, build the thinnest end-to-end path that actually runs on real data — one input, one output, no parallelism, no logging, no atomic writes. Verify it works, then add layers one at a time. This is an integration flow test, not a module smoke test: real data + real components surface mismatches against existing code; fake inputs only validate the new code in isolation. Each subsequent layer adds exactly one failure mode, so when something breaks you know where it lives.
 
 ---
 

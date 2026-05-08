@@ -2,6 +2,15 @@
 
 This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
 
+## Working Norms
+
+Process patterns Claude should follow when collaborating in this repo. (Personal engineering principles live in `docs/principles.md`; architectural decisions live in `docs/decisions.md`. This section is specifically about AI-side behavior.)
+
+- **Walking skeleton first, then layer by layer.** When starting implementation after a design phase, build the thinnest end-to-end that actually runs on real data — one input, one output, no parallelism, no logging, no atomic writes. Verify it works, then add layers one at a time. This is an *integration flow test*, not a module smoke test: real data + real components surface integration mismatches; fake inputs only validate the new code in isolation. Each subsequent layer adds exactly one failure mode.
+- **Read the existing surface before building on it.** Before designing code that calls into existing modules, read the actual signatures (`grep -n "def __init__"`, function shapes, config keys). Skipping this step surfaces integration mismatches as runtime errors after substantial code has already been written.
+- **Notify at commit-worthy moments; never auto-commit.** Flag natural checkpoints (ADRs settled, a layer compiles cleanly, a bug is fixed, before a risky operation) so the user can decide whether to commit. Do not run `git commit` autonomously.
+- **Run /review after substantial implementations.** New subsystems get a `/review` pass before being declared done — catches asymmetries, dead code, and small drift that incremental smoke tests don't.
+
 ## Project Overview
 
 **WiseTrade** — event-driven backtesting framework for multi-symbol portfolio strategies on 1-minute US equity data. Scale: ~74M bars (10 years × ~100 stocks × 1-min). No external backtesting packages.
@@ -18,7 +27,8 @@ python tests/test_end_to_end.py
 # Run single strategy on one symbol
 python run.py
 
-# Run all strategies across TECH_100 universe → results/ranking_*.csv
+# Run batch backtest: per-symbol mode across TECH_100
+# Output: results/<batch_id>/ with runs/, curves/, manifest.json, errors.log
 python run_ranking.py
 ```
 
