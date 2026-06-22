@@ -1,5 +1,8 @@
 # Working Principles
 
+*A living doc. Update when a hard-won lesson gets overwritten under pressure.*
+
+*Companion file: `collaboration-protocol.md` — operational rules for working with Claude. This file is about how I think; that file is about how we work.*
 
 ---
 
@@ -16,24 +19,28 @@
 
 ---
 
-## How I build
+## Cognitive bandwidth conservation
 
-- **Design and debate in chat. Build and refactor in CC.** Conceptual questions and architectural decisions belong in the chat interface where I stay close to the reasoning. Multi-file changes and implementation belong in Claude Code.
-- **Specify the interface or specify the uncertainty.** Before any implementation request: either "here's the interface I want, build to it" or "I don't have a clear interface yet, give me a skeleton to react to." Both are valid. Ambiguity without flagging is the failure mode.
-- **Verify logic against requirements. Trust my own debug ability.** I don't need to understand every line of generated code before it touches the codebase. I need to verify the logic matches the requirement. These are different tasks — mixing them degrades both.
-- **CLAUDE.md captures invariants, not current state.** Conventions, contracts, and things that must never change. Not "the portfolio currently does X." The code holds current state; CLAUDE.md holds the rules.
-- **ADR for non-obvious decisions.** When a design choice is made that won't be obvious to a future reader (or a fresh session), write a one-paragraph record: what was decided, what alternatives were considered, why this one. File in `docs/decisions.md`.
-- **Walking skeleton first, then layer by layer.** When starting implementation, build the thinnest end-to-end path that actually runs on real data — one input, one output, no parallelism, no logging, no atomic writes. Verify it works, then add layers one at a time. This is an integration flow test, not a module smoke test: real data + real components surface mismatches against existing code; fake inputs only validate the new code in isolation. Each subsequent layer adds exactly one failure mode, so when something breaks you know where it lives.
+This is the meta-principle that underlies most of my failure modes in AI-assisted work.
 
----
+When I delegate a high-load task (coding, research synthesis) to a model, the bandwidth that gets freed up is not automatically available for higher-leverage work. It gets eaten back — by oversized responses I struggle to process, by jumps across decision points without grounding, by outputs I can't visually review. The eating is invisible because it disguises itself as productivity: long high-quality exchanges, fast-arriving code, fluent-looking progress.
 
-## How I engage with AI tools
+The conservation law: **bandwidth saved by delegation must be explicitly protected, or it will be consumed by the delegation interface itself.**
 
-- **Don't mix task modes in a single session if the conceptual context is shifting.** Debug sessions stay debug sessions. Architectural questions get their own framing. The cost of a new conversation is lower than the cost of contaminated context.
-- **Premature completion signals are false.** A satisfying LLM exchange is not progress. The unit of progress is a requirement met in the actual system.
-- **Output-based progress metrics are unreliable in AI-assisted workflows.** Lines of code and visible artifacts don't map cleanly to advancement. Use requirement coverage and working test runs instead.
-- **Ask for quality ratings on questions.** Not every question deserves deep investment. Explicitly asking "how important is this?" is a legitimate and efficient use of the tool.
+This principle generates concrete operational rules (single-step granularity in architectural discussion, navigation-layer reporting from CC, recognizing the "skipping ahead" signal as a stop condition). Those rules live in `collaboration-protocol.md`. This file just names the underlying invariant.
+
+The same principle likely applies beyond coding — to the knowledge-restructuring project, to any work where I outsource cognitive load to a fast counterpart. Watch for the same pattern there.
 
 ---
 
-*Last reviewed: May 5 2026*
+## Under pressure (family conflict, external doubt, anxiety spikes)
+
+- Hard-won rational conclusions get overwritten by conditioned reactions under pressure. The principle book exists because of this.
+- The trigger chain: external conflict → anxiety → avoidance. Recognize the chain before the third step.
+- Physical intervention first. Reasoning during a spike is unreliable.
+- Daily minimum task: one concrete thing that accumulates evidence for the path I've chosen.
+- Consistency (连续一致性) is the primary signal I'm tracking in myself. Not output quality, not speed — consistency.
+
+---
+
+*Last reviewed: May 12, 2026.*
