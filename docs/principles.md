@@ -1,17 +1,19 @@
 # Working Principles
 
-*A living doc. Update when a hard-won lesson gets overwritten under pressure.*
+*A living doc. Update when a lesson has to be re-learned the hard way.*
 
-*Companion file: `collaboration-protocol.md` — operational rules for working with Claude. This file is about how I think; that file is about how we work.*
+*Companion files: `collaboration-protocol.md` — operational rules for working with Claude. `CLAUDE.md` — the subset of these principles that CC is expected to act on. This file is about how I think; those files are about how the work runs.*
 
 ---
 
 ## How I learn and think
 
-- **Why before how.** I don't trust a technique I can't explain mechanistically. This is a feature, not a bug — but it has a cost: I sometimes over-drill into fundamentals when the leverage is actually upstream.
-- **Mechanism over syntax.** I learn tools by understanding what they're doing, not by memorizing their API. The Operational Confidence Model: conceptual foundation → capability boundary → interface/contract. ~3-4 hours to functional competency.
-- **One black box at a time.** If I'm using a library I don't fully understand, the surrounding logic must be clean and verified. Never two unknowns compounding.
-- **Failure cost × detectability = how deep to go.** Not everything deserves full understanding. The criterion is: if this breaks, how bad and how invisible? That determines drill depth.
+- **Why before how.** I don't trust a technique I can't explain mechanistically, and I learn tools by understanding what they're doing rather than by memorizing an API. The path: conceptual foundation → capability boundary → interface/contract. The cost of this disposition: I sometimes over-drill into fundamentals when the leverage is actually upstream.
+
+- **One black box at a time.** If I'm using something I don't fully understand, the surrounding logic must be clean and verified. Never two unknowns compounding. *(Operational form in `CLAUDE.md`.)*
+
+- **Failure cost × detectability = how deep to go.** Not everything deserves full understanding. If this breaks, how bad and how invisible? That determines drill depth. *(Operational form in `CLAUDE.md`.)*
+
 - **Opportunistic learning trap.** When an unfamiliar concept appears incidentally during a task, the situation creates false urgency to learn it in place. This is not a real learning opportunity — it's a context without schema to attach to. Before drilling into an incidental concept, apply the entry filter:
     - Does it directly block task completion? → engage
     - Does it activate existing schema I can attach it to? → engage
@@ -27,20 +29,10 @@ When I delegate a high-load task (coding, research synthesis) to a model, the ba
 
 The conservation law: **bandwidth saved by delegation must be explicitly protected, or it will be consumed by the delegation interface itself.**
 
-This principle generates concrete operational rules (single-step granularity in architectural discussion, navigation-layer reporting from CC, recognizing the "skipping ahead" signal as a stop condition). Those rules live in `collaboration-protocol.md`. This file just names the underlying invariant.
+This principle generates the concrete operational rules in `collaboration-protocol.md`. This file just names the underlying invariant.
 
-The same principle likely applies beyond coding — to the knowledge-restructuring project, to any work where I outsource cognitive load to a fast counterpart. Watch for the same pattern there.
-
----
-
-## Under pressure (family conflict, external doubt, anxiety spikes)
-
-- Hard-won rational conclusions get overwritten by conditioned reactions under pressure. The principle book exists because of this.
-- The trigger chain: external conflict → anxiety → avoidance. Recognize the chain before the third step.
-- Physical intervention first. Reasoning during a spike is unreliable.
-- Daily minimum task: one concrete thing that accumulates evidence for the path I've chosen.
-- Consistency (连续一致性) is the primary signal I'm tracking in myself. Not output quality, not speed — consistency.
+The same principle applies beyond coding — to the knowledge-restructuring project, to any work where I outsource cognitive load to a fast counterpart. Watch for the same pattern there.
 
 ---
 
-*Last reviewed: May 12, 2026.*
+*Last reviewed: August 9, 2026.*
