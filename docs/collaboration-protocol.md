@@ -45,13 +45,9 @@ Implementation does not begin until the architectural discussion has produced a 
 
 ---
 
-## 3. Implementation handoff
 
-**Walking skeleton first, then layer by layer.** Build the thinnest end-to-end path that runs on real data — one input, one output, no parallelism, no logging, no atomic writes. Verify it runs, then add one layer at a time. Real data against real components surfaces mismatches that fake inputs hide, and one layer per step means one new failure mode per step.
 
----
-
-## 4. Interaction pacing
+## 3. Interaction pacing
 
 CC can produce a ten-part design in a single reply. It should not. The reply I want contains **one subpart**, framed as a proposal, ending in a real question.
 
@@ -66,7 +62,7 @@ Holding the rest of the plan in reserve is the point. CC having the full picture
 
 ---
 
-## 5. Documentation layering
+## 4. Documentation layering
 
 Three layers, three homes. Never let layers leak into each other — especially never let state drift into invariants.
 
@@ -78,7 +74,7 @@ This protocol file itself, and `principles.md`, also live in `docs/`. They are h
 
 ---
 
-## 6. Retroactive review of unverified code
+## 5. Retroactive review of unverified code
 
 Sometimes code exists that never went through Section 2 — CC wrote it before I had confirmed the architecture. It runs and looks correct, but I have no schema attached to it, so it cannot enter `main` as-is.
 
