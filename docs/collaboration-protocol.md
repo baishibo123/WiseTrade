@@ -16,18 +16,9 @@ Every rule below exists to make that invisible cost visible and bounded.
 
 ---
 
-## 2. Mode separation
+## 2. Architectural discussion
 
-- **Design and debate → chat. Build and refactor → CC.** Conceptual questions and architectural decisions belong where I stay close to the reasoning. Multi-file changes and implementation belong where the tooling matches the task.
-- **Debug sessions stay debug sessions.** If the conceptual context shifts mid-session (from debugging a specific bug to rethinking the architecture, say), open a new conversation. The cost of a new conversation is lower than the cost of contaminated context — once a session's framing is set, later turns inherit assumptions from earlier ones, and those assumptions are often the thing that needs to change.
-
----
-
-## 3. Architectural discussion protocol
-
-This is the section that addresses the root failure mode: architectural discussions whose single-step granularity is too coarse for my bandwidth, leaving the "foundation" of each subsequent step structurally unverified.
-
-### 3.1 The minimal unit per step
+### 2.1 The minimal unit per step
 
 Each step in an architectural discussion produces, at minimum:
 
@@ -36,92 +27,46 @@ Each step in an architectural discussion produces, at minimum:
 - **Annotation**: one sentence per function/module saying what it does.
 - **Flow diagram**: a simple ASCII diagram (using `|`, `-`, `→`, `└─`, etc.) whose nodes are the function/module names just introduced.
 
-The flow diagram is **incremental**: each step adds the new nodes to the previous step's diagram rather than redrawing the whole thing. This keeps context cost linear instead of quadratic.
+The flow diagram has two required properties.
 
-### 3.2 The decomposition test (soft rule)
+**Incremental.** Each step adds its new nodes to the previous step's diagram rather than redrawing the whole thing. This keeps context cost linear instead of quadratic.
 
-If the model cannot sketch signature + flow for the current step, that is a signal the step isn't decomposed enough. Stop and split before proceeding.
+**Bounded.** The units being designed in this step are enclosed in brackets; their immediate upstream and downstream neighbors appear outside the brackets as named nodes. The diagram always shows where the piece sits in the system, not only what it contains:
 
-This is a **soft rule**, not a hard gate. Some genuinely simple decisions require several small helper functions in coordination, and forcing each helper through the full format produces formalism without value. When the model judges that the format is becoming over-engineering, it should flag this explicitly ("this step is small enough that the full format adds noise — proposing to merge it with the next step") rather than silently skipping or silently complying.
+```
+strategy_trigger → [ portfolio.on_signal → portfolio.rebalance ] → metrics_collector
+```
 
-### 3.3 One decision point per step
+Everything inside `[ ]` is what this step designs. Everything outside is existing code it has to join. The outer nodes are what fixes the responsibility of the piece and makes its seams explicit — without them, an internally coherent design can still be attached to the wrong place.
 
-A single step advances exactly one architectural decision. If explaining the step requires introducing two parallel concepts that don't reduce to one, that is itself the signal to split — the same signal as 3.2, surfacing earlier.
-
-### 3.4 No real code in this phase
+### 2.2 No real code in this phase
 
 Implementation does not begin until the architectural discussion has produced a complete, incremental flow diagram covering the scope of the change. Hypothetical signatures are the deliverable of this phase; runnable code is the deliverable of the next.
 
 ---
 
-## 4. Implementation handoff
+## 3. Implementation handoff
 
-Once the architectural discussion has produced an agreed-upon flow diagram, implementation moves to CC. The following rules govern the handoff.
-
-- **Specify the interface or specify the uncertainty.** Before any implementation request: either "here is the interface, build to it" — which the architectural phase usually produces directly — or "I don't have a clear interface yet, give me a skeleton to react to." Both are valid. Ambiguity without flagging is the failure mode.
-- **Walking skeleton first, then layer by layer.** Build the thinnest end-to-end path that actually runs on real data — one input, one output, no parallelism, no logging, no atomic writes. Verify it works on real data, then add layers one at a time. Real data plus real components surface mismatches against existing code that fake inputs cannot. Each subsequent layer adds exactly one failure mode, so when something breaks I know where it lives.
-- **Verify logic against requirements, not line by line.** I do not need to understand every generated line before it touches the codebase. I need to verify the logic matches the requirement. These are different tasks; mixing them degrades both. This rule is what Section 5 is designed to make actually achievable.
+**Walking skeleton first, then layer by layer.** Build the thinnest end-to-end path that runs on real data — one input, one output, no parallelism, no logging, no atomic writes. Verify it runs, then add one layer at a time. Real data against real components surfaces mismatches that fake inputs hide, and one layer per step means one new failure mode per step.
 
 ---
 
-## 5. CC reporting contract
+## 4. Interaction pacing
 
-This section addresses the second-order problem: even if the architectural phase produced a clean foundation, my ability to verify implementation depends on what CC reports back. The default CC behavior — show a rough summary, or dump a diff too long to read — fails Section 4's "verify logic against requirements" rule.
+CC can produce a ten-part design in a single reply. It should not. The reply I want contains **one subpart**, framed as a proposal, ending in a real question.
 
-After any meaningful change, CC reports in **two layers**:
+The shape of a turn:
 
-### 5.1 Navigation layer (always shown, comes first)
+- **One subsection of the plan** — the next one, not all of them.
+- **Stated as a proposal, not a settled decision.** "Here's what I'd do for this piece, and why."
+- **A closing question that expects an answer.** "Does this work, or what would you change?"
+- **Then stop.** Do not continue into the next subpart before I've answered.
 
-For each touched function or class:
-
-- **Signature + return type**
-- **One-line annotation** of what it does
-
-Plus a **flow diagram** showing how the touched units connect — same ASCII conventions as Section 3.1, so the implementation flow can be compared directly against the architectural flow that authorized it.
-
-This layer is the verification layer. I read this first and use it to confirm the implementation matches the architectural intent.
-
-### 5.2 Detail layer (CC's natural diff, comes after)
-
-The full diff as CC would normally show it. CC should **not** suppress this — I fold it in my mind based on what the navigation layer told me. If the navigation layer reads correctly, the diff is reference material; if something in the navigation layer is surprising, the diff is where I drill in.
-
-The point is to give me the choice of whether to read the diff, not to remove the option. Suppressing the diff would re-create the original problem (rough information, can't drill) in a new form.
-
-### 5.3 Touches block (only for core interface changes)
-
-When the change modifies a core interface — something other code already depends on — insert a **Touches block** between the navigation and detail layers:
-
-```
-Touches:
-  reads:    <existing state/contracts this change reads from>
-  writes:   <existing state/contracts this change writes to>
-  assumes:  <preconditions inherited from existing code>
-```
-
-This is the lightweight version of blast-radius reporting. It is **not required** for routine changes — adding Touches blocks to every small edit produces noise. The model should add it when the change is to a core boundary; I can request it explicitly otherwise.
-
-Heavier tooling for accurate blast radius (LSP-based MCP, ast-grep) is tracked in `tooling-backlog.md` and not part of this protocol yet.
+Holding the rest of the plan in reserve is the point. CC having the full picture is useful; delivering it all at once is exactly what eats the bandwidth the delegation was supposed to free. Convergence happens one subpart at a time: propose → I react → adjust → move on.
 
 ---
 
-## 6. Failure signals
-
-These are the patterns to watch for that indicate the protocol is breaking down. Recognizing them is the precondition for using them.
-
-- **Premature completion signals are false.** A satisfying exchange is not progress. The unit of progress is a requirement met in the actual system.
-- **Output-based progress metrics are unreliable in AI-assisted workflows.** Lines of code and visible artifacts don't map cleanly to advancement. Use requirement coverage and working test runs instead.
-- **Bandwidth-overflow signal: skipping ahead.** When I notice I am reading a response and skipping over sections rather than processing them — that is the signal. Stop the response, ask to split, do not push through. Pushing through is what produces the "responding correctly while not actually understanding" failure mode, which then propagates into implementation as a virtual foundation.
-- **Unfamiliar concept appearing incidentally is not a real learning moment.** If a new library/package/concept shows up in a response and I don't already have schema for it, the correct move is to log it and open a separate session to learn it. Continuing the current session while half-understanding produces nodding-along behavior.
-
----
-
-## 7. Conversational hygiene
-
-- **Ask for quality ratings on questions.** Not every question deserves deep investment. Explicitly asking "how important is this?" is a legitimate and efficient use of the tool — both for me asking the model, and for the model asking me before producing a heavy response.
-
----
-
-## 8. Documentation layering
+## 5. Documentation layering
 
 Three layers, three homes. Never let layers leak into each other — especially never let state drift into invariants.
 
@@ -133,4 +78,22 @@ This protocol file itself, and `principles.md`, also live in `docs/`. They are h
 
 ---
 
-*Last reviewed: May 12, 2026.*
+## 6. Retroactive review of unverified code
+
+Sometimes code exists that never went through Section 2 — CC wrote it before I had confirmed the architecture. It runs and looks correct, but I have no schema attached to it, so it cannot enter `main` as-is.
+
+Keep that work on its branch and use git as the source of truth for what actually differs:
+
+```
+git log  main..feature/<branch>            # what the branch claims to add
+git diff --stat main..feature/<branch>     # which files, how much
+git diff main..feature/<branch> -- <file>  # the actual change, per file
+```
+
+Then understand it the way §2.1 describes: for each block, reconstruct signature + IO + annotation and place it in a bounded flow diagram. A block counts as verified once that reconstruction holds up against the diff. Cherry-pick verified blocks into `main` in order rather than merging the branch wholesale, so `main`'s history records what was confirmed.
+
+Any `decisions.md` or ADR entries the branch carries are claimed intent, not established fact — check them against the code before migrating them to `main`.
+
+---
+
+*Last reviewed: August 9, 2026.*
