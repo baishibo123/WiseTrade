@@ -233,9 +233,14 @@ def validate_adjustments(adjusted_db: str, splits_db: str = None):
 if __name__ == "__main__":
     import sys
 
-    # Paths
-    SOURCE_DB = "../db/us_market_1min.sqlite"
-    OUTPUT_DB = "../db/us_market_1min_adjusted.sqlite"
+    # Run as a script from anywhere: put the project root on sys.path so the
+    # single source of truth for paths (config.py) is importable. Replaces the
+    # old "../db/..." literals, which only resolved with CWD=utils/.
+    sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
+    from config import SQLITE_RAW_DB_PATH, SQLITE_DB_PATH
+
+    SOURCE_DB = str(SQLITE_RAW_DB_PATH)
+    OUTPUT_DB = str(SQLITE_DB_PATH)
 
     print("\nCORPORATE ACTION ADJUSTMENT SCRIPT (SQL)")
     print("="*70)
@@ -279,5 +284,5 @@ if __name__ == "__main__":
     validate_adjustments(OUTPUT_DB, SOURCE_DB)
 
     print("\n✓ Complete!")
-    print(f"\n  Update config.py:")
-    print(f"    SQLITE_CONFIG['path'] = '{OUTPUT_DB}'")
+    print(f"\n  No config change needed — config.SQLITE_DB_PATH already points here:")
+    print(f"    {OUTPUT_DB}")

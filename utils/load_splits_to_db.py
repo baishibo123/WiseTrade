@@ -114,4 +114,11 @@ def load_splits_csv_to_db(csv_path: str, db_path: str):
     conn.close()
 
 if __name__ == "__main__":
-    load_splits_csv_to_db("E:/baiduDiskDownload/splits.csv","../db/us_market_1min.sqlite")
+    # See adjust_database_sql.py: project root on sys.path so config.py is the
+    # only place any path is spelled out.
+    import sys
+    from pathlib import Path
+    sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
+    from config import require_splits_csv, SQLITE_RAW_DB_PATH
+
+    load_splits_csv_to_db(str(require_splits_csv()), str(SQLITE_RAW_DB_PATH))

@@ -7,7 +7,7 @@ import time
 from tqdm import tqdm
 import logging
 
-from config import RAW_DATA_ROOT, SQLITE_DB_PATH
+from config import RAW_DATA_ROOT, SQLITE_DB_PATH, require_raw_data_root
 from .schema import SQLITE_CREATE_TABLE, Bar
 
 # ----------------------------------------------------------------------
@@ -79,10 +79,13 @@ class SQLiteDatabase:
         self.connect()
         self.create_table_and_index()
 
-        # Find every CSV in your E:\stock\...\*.csv structure
-        csv_files = list(RAW_DATA_ROOT.rglob("*.csv"))
+        # Find every CSV under the configured raw-data root. Validated here
+        # rather than at config import time: importing config must not fail on
+        # a machine that only reads the prebuilt DB and never ingests CSVs.
+        raw_data_root = require_raw_data_root()
+        csv_files = list(raw_data_root.rglob("*.csv"))
         if not csv_files:
-            raise FileNotFoundError(f"No CSV files found under {RAW_DATA_ROOT}")
+            raise FileNotFoundError(f"No CSV files found under {raw_data_root}")
 
         total_inserted = 0
         pbar = tqdm(csv_files, desc="Loading TECH_100 → SQLite", unit="file", disable=not show_progress)

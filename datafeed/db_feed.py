@@ -77,9 +77,40 @@ class DatabaseFeed(BaseFeed):
     def _init_sqlite(self):
         """Initialize SQLite connection with Row factory for named access"""
         import sqlite3
+        from pathlib import Path
 
-        db_path = self.db_config.get("path", "data/bars.db")
-        self.connection = sqlite3.connect(db_path)
+        raw_path = self.db_config.get("path")
+        if not raw_path:
+            raise ValueError("SQLite db_config is missing a 'path' key")
+        db_path = Path(raw_path)
+
+        # Check existence explicitly. sqlite3.connect() CREATES an empty
+        # database when the path is missing, so a wrong path would otherwise
+        # surface one line later as "no such table: bars" -- pointing at the
+        # schema instead of at the path -- and leave a stray empty file behind.
+        # With N workers that is N chances to litter.
+        if not db_path.exists():
+            raise FileNotFoundError(
+                f"Bar database not found: {db_path}\n"
+                "Check config.SQLITE_DB_PATH, or build the database with "
+                "database/sqlite_db.py."
+            )
+
+        # Read-only. Batch workers only ever SELECT, and making that structural
+        # means 15 concurrent processes cannot corrupt the shared 3 GB file --
+        # which is the assumption ADR-001 rests on. as_posix() keeps the URI
+        # valid on Windows (file:C:/Users/... rather than file:C:\Users\...).
+        uri = f"file:{db_path.as_posix()}?mode=ro"
+        try:
+            self.connection = sqlite3.connect(uri, uri=True)
+        except sqlite3.OperationalError as e:
+            raise sqlite3.OperationalError(
+                f"Could not open {db_path} read-only: {e}. If the database is in "
+                "WAL mode, a read-only connection still needs to create the "
+                "-shm/-wal sidecar files: either make the containing directory "
+                "writable, or add '&immutable=1' to the URI above if the file is "
+                "guaranteed not to change while the batch runs."
+            ) from e
 
         # CRITICAL: Enable dictionary-like access to rows
         self.connection.row_factory = sqlite3.Row
