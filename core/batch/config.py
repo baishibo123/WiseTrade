@@ -112,6 +112,7 @@ class PortfolioBatchConfig(_CommonBatchConfig):
                     universe=universe,
                     start_datetime=self.start_datetime,
                     end_datetime=self.end_datetime,
+                    portfolio_config=self.portfolio_config,
                 )
                 tasks.append(BatchTask(
                     run_id=run_id,
@@ -128,10 +129,10 @@ class PortfolioBatchConfig(_CommonBatchConfig):
                 ))
         return tasks
 
-    def run(self, resume_dir: Optional[Path] = None) -> Path:
+    def run(self, resume_dir: Optional[Path] = None, overwrite: bool = False) -> Path:
         batch_dir = Path(resume_dir) if resume_dir else make_batch_dir(self.results_root, self.batch_name)
         tasks = self.build_tasks(batch_dir)
-        return BatchRunner(batch_dir, n_workers=self.n_workers).run(tasks, resume=resume_dir is not None)
+        return BatchRunner(batch_dir, n_workers=self.n_workers).run(tasks, overwrite=overwrite)
 
 
 # ---------------------------------------------------------------------------
@@ -171,6 +172,7 @@ class PerSymbolBatchConfig(_CommonBatchConfig):
                         universe=sym_universe,
                         start_datetime=self.start_datetime,
                         end_datetime=self.end_datetime,
+                        portfolio_config=portfolio_config,
                     )
                     tasks.append(BatchTask(
                         run_id=run_id,
@@ -187,7 +189,7 @@ class PerSymbolBatchConfig(_CommonBatchConfig):
                     ))
         return tasks
 
-    def run(self, resume_dir: Optional[Path] = None) -> Path:
+    def run(self, resume_dir: Optional[Path] = None, overwrite: bool = False) -> Path:
         batch_dir = Path(resume_dir) if resume_dir else make_batch_dir(self.results_root, self.batch_name)
         tasks = self.build_tasks(batch_dir)
-        return BatchRunner(batch_dir, n_workers=self.n_workers).run(tasks, resume=resume_dir is not None)
+        return BatchRunner(batch_dir, n_workers=self.n_workers).run(tasks, overwrite=overwrite)

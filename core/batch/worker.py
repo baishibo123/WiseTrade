@@ -40,25 +40,20 @@ def worker_init(log_queue) -> None:
 def run_one(task: BatchTask) -> RunResult:
     """
     Execute one backtest task. Never raises — all failures become RunResult(status="error").
+
+    Unconditional: a task reaching here is always executed, and its result JSON
+    overwrites any existing one.
     """
     start = time.time()
 
     batch_dir = Path(task.batch_dir)
     result_path = batch_dir / "runs" / f"{task.run_id}.json"
 
-    if result_path.exists():
-        return RunResult(
-            run_id=task.run_id,
-            strategy_name=task.strategy_name,
-            strategy_version=task.strategy_version,
-            params=task.params,
-            universe=task.universe,
-            start_datetime=task.start_datetime,
-            end_datetime=task.end_datetime,
-            status="skipped",
-            duration_seconds=0.0,
-        )
-
+    # No commit check here. Whether an already-committed task should run is a
+    # batch-level policy decision and lives in BatchRunner._filter_committed
+    # (ADR-021): by the time a task reaches this function the cost of starting a
+    # process has already been paid, and the worker cannot see the overwrite
+    # flag anyway.
     try:
         from core.engine import Engine
 
@@ -117,5 +112,13 @@ def run_one(task: BatchTask) -> RunResult:
 
 
 def _sanitize_metrics(metrics: dict[str, Any]) -> dict[str, Any]:
-    """Strip non-JSON-serializable fields (e.g., numpy types coerced via default=str)."""
+    """
+    Drop metrics keys that RunResult already carries at the top level.
+
+    Only "universe" qualifies today — Analyzer emits it inside metrics, and
+    RunResult has its own universe field, so keeping both would let the two
+    drift. This is deduplication, not a serialization guard: numpy scalars in
+    metrics survive because np.float64 subclasses float, and anything json
+    genuinely cannot encode is coerced by atomic_write_json's default=str.
+    """
     return {k: v for k, v in metrics.items() if k != "universe"}  # universe already in RunResult

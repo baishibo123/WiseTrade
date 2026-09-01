@@ -4,7 +4,7 @@ BatchRunner: ProcessPoolExecutor-based orchestrator for batch backtests.
 Responsibilities:
 - Set up the batch output directory layout
 - Spin up cross-process logging (QueueHandler/QueueListener — ADR-012)
-- Submit tasks, drain results via as_completed, print progress
+- Submit tasks, drain results in submission order, print progress
 - Persist a derived manifest by scanning runs/ at end (ADR-006)
 - Handle Ctrl+C gracefully: in-flight workers finish, manifest still gets built
 """
@@ -17,9 +17,9 @@ import multiprocessing as mp
 import os
 import sys
 import time
-from concurrent.futures import ProcessPoolExecutor, as_completed
+from concurrent.futures import ProcessPoolExecutor
 from datetime import datetime
-from logging.handlers import QueueListener
+from logging.handlers import QueueHandler, QueueListener
 from pathlib import Path
 from typing import Optional
 
@@ -28,42 +28,147 @@ from core.batch.types import BatchTask, RunResult
 from core.batch.worker import run_one, worker_init
 
 
+class TqdmLoggingHandler(logging.Handler):
+    """
+    Emit log records via tqdm.write() so they scroll above the progress bar
+    rather than tearing it (F2).
+
+    Two streams share one terminal and have different lifetimes. Progress is
+    ephemeral state — only the newest value matters, so it is pinned and
+    overwritten in place. Log records are an append-only record — every one
+    matters, so they scroll and are never overwritten. A plain StreamHandler
+    plus a live bar puts two uncoordinated writers on one file descriptor,
+    which is how a warning ends up spliced into a half-redrawn bar. tqdm.write()
+    takes tqdm's own lock, clears the bar, writes the line, and redraws, so the
+    two coexist.
+    """
+
+    def emit(self, record):
+        # Everything, including the import, is inside the try. This handler runs
+        # on the QueueListener thread, and an exception escaping emit() kills
+        # that thread -- which silently decapitates logging for the rest of the
+        # batch. Falling back to a plain stderr write means a broken or missing
+        # tqdm degrades the display instead of the run.
+        try:
+            from tqdm import tqdm  # local: keeps `import core.batch` tqdm-free
+            tqdm.write(self.format(record), file=sys.stderr)
+        except Exception:
+            try:
+                print(self.format(record), file=sys.stderr)
+            except Exception:
+                self.handleError(record)
+
+
 class BatchRunner:
     def __init__(
         self,
         batch_dir: Path,
         n_workers: Optional[int] = None,
+        start_method: Optional[str] = None,
     ):
         self.batch_dir = Path(batch_dir)
         self.n_workers = n_workers if n_workers is not None else max(1, (os.cpu_count() or 2) - 1)
 
-    def run(self, tasks: list[BatchTask], resume: bool = False) -> Path:
+        # Pin the start method (ADR-015). An explicit context rather than
+        # mp.set_start_method(force=True): the choice stays local, so no global
+        # interpreter state is mutated, nothing else in the process is affected,
+        # and no other caller's choice is silently overridden. Pinning it at all
+        # means a fork-vs-spawn bug can never present as an unexplained
+        # difference between the Windows box and the Mac.
+        self._mp_ctx = self._resolve_mp_context(start_method)
+
+    @staticmethod
+    def _resolve_mp_context(requested: Optional[str]):
+        """
+        Resolve the worker start method to a concrete multiprocessing context.
+
+        Falls back to spawn (with a warning) when the requested method is not
+        available on this platform, so a config value carried over from the
+        other machine degrades instead of raising.
+        """
+        if requested is None:
+            from config import MP_START_METHOD
+            requested = MP_START_METHOD
+
+        available = mp.get_all_start_methods()
+        if requested not in available:
+            logging.warning(
+                f"start method {requested!r} is unavailable on this platform "
+                f"(have: {available}); falling back to 'spawn'."
+            )
+            requested = "spawn"
+
+        if requested == "fork":
+            # Not a neutral alternative here: _start_logging() starts the
+            # QueueListener thread before _execute() builds the pool, so the
+            # parent is multi-threaded at fork time. Python 3.12 warns that this
+            # risks deadlock. Exposed for the ADR-015 measurement, not for
+            # routine use.
+            logging.warning(
+                "start method 'fork' selected (experimental, ADR-015). The parent "
+                "is multi-threaded when workers are created, which risks deadlock; "
+                "use it to measure startup cost, not for production batches."
+            )
+
+        return mp.get_context(requested)
+
+    def run(self, tasks: list[BatchTask], overwrite: bool = False) -> Path:
         """
         Execute tasks and return the batch directory path.
 
-        resume=False (default): pre-existing run JSON files in this batch_dir
-        will still be skipped by the worker (the file's existence is the commit
-        signal). To force a full re-run, point at a fresh batch_dir.
+        Default (ADR-021): only tasks with no committed result are submitted.
+        A task's runs/<run_id>.json existing is the commit signal (ADR-006), so
+        reusing it is not a mode — it is what running a batch means.
 
-        resume=True: same behavior. The flag exists to make user intent
-        explicit at the call site; worker semantics are identical.
+        overwrite=True: human override. Everything is submitted and any existing
+        result is discarded and recomputed. This is for what the hash cannot see
+        — a re-adjusted bar database, an edited shared indicator — so it is a
+        deliberate, destructive order and is logged at WARNING to leave a trace
+        in errors.log. It is deliberately *not* how the program expresses its own
+        staleness findings; that is per-task and belongs to ADR-022.
+
+        The filter runs here in the parent rather than inside the worker. A task
+        dropped here costs nothing; a task that reaches a worker only to discover
+        its own result already exists has already paid pickling, IPC and process
+        startup. Keeping the decision here is also what lets the flag mean
+        anything at all: the worker never sees it.
         """
         self._setup_layout()
 
-        log_queue, listener = self._start_logging()
+        log_queue, listener, manager, saved_logging = self._start_logging()
+
+        pending = self._filter_committed(tasks, overwrite)
         logging.info(
-            f"BatchRunner starting: {len(tasks)} tasks, {self.n_workers} workers, "
+            f"BatchRunner starting: {len(pending)} tasks, {self.n_workers} workers, "
             f"batch_dir={self.batch_dir}"
         )
 
+        manifest_path = None
         try:
-            self._execute(tasks, log_queue)
-        except KeyboardInterrupt:
-            logging.warning("Interrupted — in-flight tasks finishing, then writing manifest.")
-        finally:
-            listener.stop()
+            try:
+                self._execute(pending, log_queue)
+            except KeyboardInterrupt:
+                logging.warning("Interrupted — in-flight tasks finishing, then writing manifest.")
 
-        manifest_path = self._build_manifest()
+            # Must run INSIDE this try and BEFORE listener.stop(). _build_manifest
+            # logs a warning for every unreadable run JSON, and the root logger's
+            # only handler is a QueueHandler feeding the listener thread. Stopping
+            # the listener first would drop those records into a queue nobody
+            # reads, so a truncated run file would silently vanish from the
+            # manifest -- n_runs would read 197 against 200 files on disk, with no
+            # trace on the console or in errors.log.
+            manifest_path = self._build_manifest()
+        finally:
+            # Order matters. listener.stop() drains the queue and joins the
+            # listener thread; manager.shutdown() then terminates the process
+            # hosting that queue. Reversed, the listener would be reading from a
+            # queue whose backing process is gone -- a hang or BrokenPipeError at
+            # interpreter exit.
+            listener.stop()
+            manager.shutdown()
+            self._restore_logging(saved_logging)
+
+        # The batch's result goes to stdout; progress and logs went to stderr.
         print(f"\nBatch complete. Manifest: {manifest_path}")
         return self.batch_dir
 
@@ -79,14 +184,24 @@ class BatchRunner:
         """
         Multi-process logging via QueueListener (ADR-012).
 
-        Returns (log_queue, listener). Caller must call listener.stop().
+        Returns (log_queue, listener, manager, saved_logging). The caller owns
+        teardown and must, in this order: stop the listener, shut down the
+        manager, restore logging. See run().
         """
-        manager = mp.Manager()
+        # A Manager queue rather than mp.Queue(): ProcessPoolExecutor passes
+        # initargs by pickling, and a raw mp.Queue only survives inheritance
+        # across fork. A manager queue is a proxy and pickles, which is what
+        # makes it work under spawn. The cost is a manager process that must be
+        # shut down explicitly -- previously it was leaked once per batch.
+        manager = self._mp_ctx.Manager()
         log_queue = manager.Queue()
 
         fmt = logging.Formatter("%(asctime)s [%(levelname)s] %(message)s", datefmt="%H:%M:%S")
 
-        console = logging.StreamHandler(sys.stdout)
+        # stderr, not stdout: stdout carries only the batch's result (the
+        # manifest path), so `python run_ranking.py > out.txt` keeps the result
+        # and lets progress and logs stay on the terminal.
+        console = TqdmLoggingHandler()
         console.setLevel(logging.INFO)
         console.setFormatter(fmt)
 
@@ -100,54 +215,133 @@ class BatchRunner:
         # Main process logging also goes through this listener so its output
         # interleaves cleanly with worker logs.
         root = logging.getLogger()
+
+        # Snapshot before mutating. Without restoring this, BatchRunner
+        # permanently breaks logging for everything that runs after it: the
+        # handlers are cleared here, and once the listener is stopped the
+        # QueueHandler installed below feeds a dead queue -- so every later
+        # logging call anywhere in the process is silently swallowed.
+        saved_logging = (root.handlers[:], root.level)
+
         root.handlers.clear()
-        from logging.handlers import QueueHandler
         root.addHandler(QueueHandler(log_queue))
         root.setLevel(logging.INFO)
 
-        return log_queue, listener
+        return log_queue, listener, manager, saved_logging
+
+    @staticmethod
+    def _restore_logging(saved) -> None:
+        """Undo _start_logging's mutation of the process-wide root logger."""
+        handlers, level = saved
+        root = logging.getLogger()
+        root.handlers.clear()
+        for handler in handlers:
+            root.addHandler(handler)
+        root.setLevel(level)
+
+    def _filter_committed(self, tasks: list[BatchTask], overwrite: bool) -> list[BatchTask]:
+        """
+        Return the tasks that should actually be submitted (ADR-021).
+
+        Reports the split before any work starts, so the count is known up front
+        instead of being discovered one progress line at a time.
+        """
+        runs_dir = self.batch_dir / "runs"
+        committed, remaining = [], []
+        for task in tasks:
+            bucket = committed if (runs_dir / f"{task.run_id}.json").exists() else remaining
+            bucket.append(task)
+
+        if overwrite:
+            if committed:
+                # WARNING, not INFO: this destroys committed results, and the
+                # errors.log handler is set to WARNING, so the act of discarding
+                # them leaves a durable record rather than only a console line.
+                logging.warning(
+                    f"overwrite=True: discarding and recomputing {len(committed)} of "
+                    f"{len(tasks)} already-committed results."
+                )
+            return list(tasks)
+
+        if committed:
+            logging.info(
+                f"{len(committed)} of {len(tasks)} already committed, "
+                f"submitting {len(remaining)}."
+            )
+        return remaining
 
     def _execute(self, tasks: list[BatchTask], log_queue) -> None:
         total = len(tasks)
-        done = ok = errors = skipped = crashed = 0
+        done = ok = errors = crashed = 0
         start = time.time()
 
         with ProcessPoolExecutor(
             max_workers=self.n_workers,
+            mp_context=self._mp_ctx,
             initializer=worker_init,
             initargs=(log_queue,),
         ) as ex:
-            future_to_task = {ex.submit(run_one, task): task for task in tasks}
+            # Every task is submitted up front, so the pool stays saturated no
+            # matter what order results are read in. Iterating the submission
+            # list instead of as_completed therefore costs no throughput --
+            # fut.result() blocks on task i while i+1..n keep running in their
+            # own processes -- and buys a meaningful [n/total]: n is the nth
+            # task the config enumerated, so a progress line maps back to a
+            # specific (strategy, params, symbol). Under as_completed the
+            # counter named no task at all.
+            #
+            # The one cost is head-of-line blocking in *reporting*: a slow
+            # first task delays the lines for tasks that already finished.
+            # Failures are unaffected -- run_one logs the traceback from inside
+            # the worker before returning, so errors still reach the console
+            # and errors.log in real time regardless of this ordering.
+            submitted = [(task, ex.submit(run_one, task)) for task in tasks]
 
-            for fut in as_completed(future_to_task):
-                task = future_to_task[fut]
-                done += 1
-                try:
-                    result: RunResult = fut.result()
-                except Exception as exc:
-                    crashed += 1
-                    logging.error(
-                        f"[{done}/{total}] {task.run_id} {task.strategy_name} CRASHED: {exc!r}"
-                    )
-                    continue
+            from tqdm import tqdm  # local: keeps `import core.batch` tqdm-free
 
-                if result.status == "ok":
-                    ok += 1
-                    metrics_str = self._format_metrics(result.metrics)
-                    print(
-                        f"[{done}/{total}] {task.strategy_name} ok ({result.duration_seconds:.1f}s) {metrics_str}"
-                    )
-                elif result.status == "error":
-                    errors += 1
-                    last_line = (result.error or "").strip().splitlines()[-1] if result.error else "?"
-                    print(f"[{done}/{total}] {task.strategy_name} ERROR: {last_line}")
-                elif result.status == "skipped":
-                    skipped += 1
-                    print(f"[{done}/{total}] {task.strategy_name} skipped (already done)")
+            # One aggregate bar, not one per worker. Per-task lines go through
+            # logging rather than print(), so every character of text output has
+            # a single writer -- the listener thread calling tqdm.write() -- and
+            # main-process narration cannot race worker logs onto the same fd.
+            with tqdm(
+                total=total,
+                desc=self.batch_dir.name,
+                unit="run",
+                file=sys.stderr,
+                leave=True,
+                dynamic_ncols=True,
+            ) as pbar:
+                for task, fut in submitted:
+                    done += 1
+                    try:
+                        result: RunResult = fut.result()
+                    except Exception as exc:
+                        crashed += 1
+                        logging.error(
+                            f"[{done}/{total}] {task.run_id} {task.strategy_name} CRASHED: {exc!r}"
+                        )
+                    else:
+                        if result.status == "ok":
+                            ok += 1
+                            logging.info(
+                                f"[{done}/{total}] {task.strategy_name} ok "
+                                f"({result.duration_seconds:.1f}s) {self._format_metrics(result.metrics)}"
+                            )
+                        elif result.status == "error":
+                            errors += 1
+                            last = (result.error or "").strip().splitlines()[-1] if result.error else "?"
+                            # Overlaps the worker's own ERROR line by design: that
+                            # one is keyed by run_id, this one by batch position.
+                            logging.info(f"[{done}/{total}] {task.strategy_name} ERROR: {last}")
+
+                    # try/except/else rather than `continue`, so these two always
+                    # run -- a crashed future previously skipped the bar update.
+                    pbar.update(1)
+                    pbar.set_postfix(ok=ok, err=errors, crashed=crashed, refresh=False)
 
         elapsed = time.time() - start
         logging.info(
-            f"Done: {ok} ok, {errors} error, {skipped} skipped, {crashed} crashed in {elapsed:.1f}s"
+            f"Done: {ok} ok, {errors} error, {crashed} crashed in {elapsed:.1f}s"
         )
 
     def _build_manifest(self) -> Path:
@@ -179,7 +373,6 @@ class BatchRunner:
             "n_runs": len(summaries),
             "n_ok": sum(1 for r in summaries if r["status"] == "ok"),
             "n_error": sum(1 for r in summaries if r["status"] == "error"),
-            "n_skipped": sum(1 for r in summaries if r["status"] == "skipped"),
             "runs": summaries,
         }
         manifest_path = self.batch_dir / "manifest.json"
@@ -192,7 +385,7 @@ class BatchRunner:
             return ""
         ret = metrics.get("total_return_pct")
         sharpe = metrics.get("sharpe")
-        trades = metrics.get("num_trades")
+        trades = metrics.get("num_episodes")
         parts = []
         if ret is not None:
             parts.append(f"ret={ret:+.2f}%")

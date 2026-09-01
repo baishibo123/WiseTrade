@@ -4,8 +4,14 @@ WiseTrade — strategy ranking across the TECH_100 universe.
 Per-symbol mode (ADR-009): each (strategy, params, symbol) is one independent run
 with its own $100k of capital. Results are written to results/<batch_id>/.
 
-To rerun and resume an interrupted batch, pass the batch dir as resume_dir:
+To continue an interrupted batch, pass its directory as resume_dir. Already
+committed runs are reused; only the missing ones are submitted (ADR-021):
     config.run(resume_dir=Path("results/sma_ranking_20260506_153045"))
+
+To force everything in that directory to be recomputed -- for what the run_id
+hash cannot see, such as a re-adjusted bar database (ADR-022) -- add the
+explicit override:
+    config.run(resume_dir=Path("results/..."), overwrite=True)
 """
 
 from __future__ import annotations

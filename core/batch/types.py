@@ -48,7 +48,7 @@ class RunResult:
     universe: list[str]
     start_datetime: int
     end_datetime: int
-    status: str                             # "ok" | "error" | "skipped"
+    status: str                             # "ok" | "error"
     metrics: Optional[dict[str, Any]] = None
     error: Optional[str] = None             # traceback string when status="error"
     duration_seconds: float = 0.0
@@ -65,12 +65,22 @@ def compute_run_id(
     universe: list[str],
     start_datetime: int,
     end_datetime: int,
+    portfolio_config: dict[str, Any],
 ) -> str:
     """
     Deterministic 16-char hex hash of the task's identifying fields.
 
     Bumping strategy_version invalidates prior hashes — required when
     strategy behavior changes without renaming the class. See ADR-004.
+
+    portfolio_config is hashed in full, not key-by-key (ADR-013). Engine only
+    reads five keys from it (initial_cash, max_positions, max_position_pct,
+    min_trade_size, min_trade_size_per_symbol), so hashing the whole dict can
+    produce a spurious cache *miss* when an ignored key changes. That is the
+    safe direction to err: a miss costs one recomputation, whereas a spurious
+    cache *hit* silently returns metrics computed under different capital
+    constraints. Deliberately no default — a caller that forgets this argument
+    should fail loudly rather than fall back to an unconstrained hash.
     """
     payload = {
         "strategy_name": strategy_name,
@@ -79,6 +89,7 @@ def compute_run_id(
         "universe": sorted(universe),
         "start_datetime": start_datetime,
         "end_datetime": end_datetime,
+        "portfolio_config": _canonicalize(portfolio_config),
     }
     serialized = json.dumps(payload, sort_keys=True, default=str)
     digest = hashlib.sha256(serialized.encode()).hexdigest()
