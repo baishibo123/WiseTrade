@@ -2,6 +2,11 @@
 
 One paragraph per decision: **what** was decided, **alternatives** considered, **why** this one. Append-only; if a decision is overturned, add a new entry that supersedes it rather than editing the old one.
 
+**Status flags.** An entry with no flag is a settled decision. Whether it has been implemented yet is a question about the code, not about the decision (see `collaboration-protocol.md` §4) — where the gap matters, the entry says so. Entries that are *not* settled are marked in the title and carry an explicit `**Status:**` line, so a reader can never mistake an intention for an established fact:
+
+- `· OPEN` — a decision we know we have to make and have deliberately not made. A provisional default may be in place; the entry says what would trigger revisiting it.
+- `· FUTURE` — recorded inspiration. Not scheduled, nothing depends on it, and no current code is shaped by it.
+
 ---
 
 ## ADR-001: Stay on SQLite (defer PostgreSQL migration)
@@ -121,3 +126,164 @@ One paragraph per decision: **what** was decided, **alternatives** considered, *
 **Alternatives:** Per-worker stdout (interleaved garbage); per-worker log files (fragmented, hard to read).
 
 **Why:** This is the canonical Python pattern for multi-process logging. Workers can't safely write to stdout directly without interleaving. A central queue plus a draining listener thread serializes output. Errors stream to the terminal in real time without stopping the batch (per requirement). The same channel persists structured errors to `errors.log` for post-run inspection.
+
+---
+
+## ADR-013: `run_id` includes the full portfolio config (supersedes ADR-004's field list)
+
+**Decided:** `compute_run_id` hashes `portfolio_config` in full, alongside the ADR-004 fields.
+
+**Alternatives:** Whitelist only the five keys `Engine` reads; leave portfolio config out of the hash entirely.
+
+**Why:** `initial_cash`, `max_positions`, `max_position_pct`, and `min_trade_size` all change the resulting metrics, so two batches differing only in those fields were producing identical `run_id`s — meaning an opt-in resume could silently return results computed under different capital constraints. Hashing the whole dict rather than a whitelist accepts spurious cache misses (cost: one recomputation) to eliminate spurious hits (cost: silently wrong numbers). A whitelist would also need manual sync with `Engine`'s reads, which is exactly the drift ADR-004's VERSION discipline already asks a human to manage once.
+
+---
+
+## ADR-014 · FUTURE: Progressive disclosure in the batch-configuration UI
+
+**Status:** FUTURE — recorded inspiration, not scheduled. No code depends on it, and nothing in the current architecture blocks it.
+
+**Proposed:** When a user-facing front end is eventually built over the batch layer, configuration should be presented as a wizard — one decision per screen, each selection constraining and revealing the next — rather than as one flat form exposing every option simultaneously. Concretely: choose the universe; then choose strategies, now filtered to those valid for that universe; then supply parameters, now displayed with the chosen strategy's actual parameter names, defaults, and bounds.
+
+**Alternatives:** A single flat configuration surface listing universe, strategy classes, and parameter fields at once — which is what a direct rendering of `PerSymbolBatchConfig`'s dataclass fields would produce.
+
+**Why:** A flat surface offers no selection-triggered constraint. Nothing narrows the strategy list once a universe is chosen, and nothing tells the user which parameters the chosen strategy actually accepts — so a `param_grid` key the strategy ignores silently produces N distinct runs with identical results, which is a real property of `_expand_params` today. Staging the decisions makes each choice's valid domain a function of the previous choice, which is precisely where a constraint can be both enforced and displayed. The governing idea is attention: at any moment the user should be looking at one decision, not twenty.
+
+**Note — this is a display concern, not an enumeration concern.** It was first suspected to be an architecture problem: that `build_tasks` should nest `universe → strategy → params` as dependent levels rather than taking a flat product over symbols. That was investigated and rejected. The flat product is correct for the ranking experiment `run_ranking.py` performs, and the uniformity it enforces is what makes per-symbol metrics comparable (ADR-011). `strategy → params` is already nested (ADR-010); only the symbol dimension is a flat product, and deliberately so. A future reader should not "fix" `build_tasks` on the strength of this entry. The wizard's step order happening to mirror the enumeration nesting is why the idea is recorded here rather than discarded.
+
+---
+
+## ADR-015 · OPEN: Process start method — fork vs spawn
+
+**Status:** OPEN — provisional default is **spawn**, pinned explicitly and selectable. Not yet measured.
+
+**Provisional:** `BatchRunner` resolves the start method to an explicit `multiprocessing` context and passes it to both `ProcessPoolExecutor(mp_context=...)` and `Manager()`, so macOS and Windows exercise the same code path. The method is selectable via `config.MP_START_METHOD` / `WISETRADE_MP_START_METHOD`, defaulting to `"spawn"`; an unavailable value falls back to spawn with a warning rather than raising.
+
+*Mechanism refined during implementation (this entry is provisional by status, so amended in place rather than superseded): an explicit context is used instead of `set_start_method(force=True)`. Same decision, better mechanism — the choice stays local to `BatchRunner`, so no global interpreter state is mutated, nothing else in the process is affected, and no other caller's start method is silently overridden or able to silently override ours.*
+
+**Selectable because the question cannot otherwise be settled.** ADR-015 stays OPEN on the strength of an unmeasured startup-cost claim; exposing the knob is what makes measuring it possible. `fork` is therefore available but warns on selection, and is not a neutral peer: `_start_logging()` starts the `QueueListener` thread *before* `_execute()` builds the pool, so the parent is provably multi-threaded at fork time — which Python 3.12 warns risks deadlock, and which motivated Python 3.14 moving Linux off fork-by-default. (One hazard is dodged by construction: feeds are created inside `run_one`, so no SQLite connection exists to be inherited.)
+
+**A third candidate, noted during implementation: `forkserver`.** It may dominate both. A fork server process is created early, stays single-threaded, and all workers are forked from *it* — so it keeps fork's cheap startup while structurally avoiding the multi-threaded-parent hazard that makes plain `fork` unsafe here. POSIX-only, so it cannot be the cross-platform default, but it belongs in the measurement alongside the other two.
+
+**Alternatives:** `fork` (POSIX only); leave it unset and inherit whatever each platform defaults to.
+
+**Why:** The two differ in what a worker inherits. `fork` copies the parent's address space copy-on-write, so workers start fast and get already-imported modules, open file descriptors, and module-level state for free. `spawn` starts a fresh interpreter that re-imports everything and receives only what is explicitly pickled through `initargs`. That makes `fork` meaningfully cheaper to start — no per-worker re-import of pandas/numpy — but it also inherits locks and descriptors that were never designed to be duplicated: an inherited SQLite connection or a held logging lock is a classic source of deadlock and silent corruption, and CPython now warns that forking a multi-threaded process is unsafe — our `QueueListener` *is* a thread. `spawn`'s isolation is total, which is what ADR-002's supervisor rationale actually depends on. Windows has no `fork` at all, so `spawn` is the only shape that runs unchanged on both machines.
+
+**Why this stays OPEN:** `fork`'s startup advantage is real and grows with import weight. Amortized across ~200 multi-minute backtests it is noise, but a large grid sweep of short runs would feel it, and a future read-only shared bar cache is something `fork` would give for free and `spawn` cannot. None of this has been measured. The default is `spawn` because it is the only choice correct on both platforms today, and it is pinned *explicitly* rather than left to the platform default specifically so that a fork-vs-spawn bug can never present as a silent difference between the Windows box and the Mac.
+
+**Revisit when:** worker startup is measured as a significant fraction of batch wall time, or a shared-memory structure appears that `fork` would make free.
+
+---
+
+## ADR-016 · OPEN: Live and streaming curve recording
+
+**Status:** OPEN — nothing streaming is implemented or scheduled. The interface gate described below is the agreed next implementation step but is **not yet in place**; today the worker still reads `analyzer.portfolio._equity_history` directly.
+
+**Provisional:** Keep the full equity history in memory exactly as now, and keep the end-of-run Parquet write as the durable artifact. Add no streaming implementation. Preserve the option by making the recorder be invoked from *inside* the event loop rather than after it — that call site, not the abstract base class, is the part that cannot be retrofitted cheaply.
+
+**Alternatives:** Implement streaming Parquet now for bounded memory; implement a live-tail sink now for real-time plotting; add nothing at all and accept that a future need forces a rewrite of `Portfolio` and `Engine`.
+
+**Why:** Two different motivations have been travelling under the single word "streaming", and they have opposite requirements. Bounded memory wants large infrequent flushes and needs to *stop* retaining rows; live plotting wants small frequent flushes and must *keep* retaining them, because `Analyzer` reads the full series in six places to compute its metrics. Neither is needed now — this is backtesting, not live trading, and one year of single-symbol 1-minute bars is ~98k rows, roughly 4 MB, so memory is not a constraint at current scale. ADR-008's stated OOM motivation is therefore speculative; the live-plotting motivation is the real one, and it only becomes real for a strategy expensive enough that a single run takes minutes.
+
+**Recorded so it is not rediscovered:** Parquet is the wrong format for a live-tail path. ADR-007 chose it precisely *because* the footer is written only on close, making a partial file detectably invalid — which is exactly backwards for tailing, since a reader can see nothing until the run has already finished. A live path therefore needs a second, different sink (JSONL tail, append-only ring buffer, socket) alongside the Parquet commit, not another subclass of the same recorder. It should also downsample on the way out: pushing all 98k points would exceed what any chart can render *and* add per-tick cost to the very run being watched.
+
+**Deliberately deferred:** whether an in-memory recorder owns the equity list, or `Portfolio` keeps owning `_equity_history` with the recorder as a pure side-channel. Side-channel is the smaller change and leaves `Analyzer` untouched; ownership is the cleaner shape and is what would eventually make bounded memory reachable. Also deferred, and the harder question: *what to actually display*, given that a 200-run batch cannot plot every curve.
+
+**Revisit when:** a single run is slow enough that watching it has value, or per-symbol curves make memory a real constraint.
+
+---
+
+## ADR-017 · FUTURE: Source fingerprint as a resume tripwire
+
+**Status:** FUTURE — the idea is agreed; the scope question below cannot be answered while module boundaries are still moving.
+
+**Proposed:** Stamp each committed run's JSON with a fingerprint of the code that produced it — `sha256` over the strategy class source plus the modules it calls. The fingerprint is *not* part of `run_id`. On resume, compare it against the committed run's recorded value and warn loudly (or refuse) on mismatch instead of silently skipping.
+
+**Alternatives:** Fold a source hash into `run_id` itself (rejected by ADR-004, correctly); rely on VERSION discipline alone (status quo).
+
+**Why:** ADR-004's VERSION discipline has two weaknesses. First, its failure is asymmetric and silent: forgetting to bump silently reuses results produced by code that no longer exists, while bumping unnecessarily costs one recomputation — so the only safe bias is over-bumping, which humans do not reliably do. Second, it has a transitive hole it does not mention: `calculate_sma` in `indicators.py` is shared by six strategies, so editing it changes every strategy's behavior while no strategy's `VERSION` changes. A fingerprint closes both. The insight that makes it viable where ADR-004's rejection still stands: source hashing is too brittle to serve as an *identity*, but brittleness is harmless in a *tripwire* — it does not need to be stable, only different. A false positive costs one recomputation; that is the same cheap direction ADR-013 chose.
+
+**Why deferred:** The unanswered question is coverage. Strategy class only? Plus `indicators.py`? Plus `Portfolio` — whose fill and sizing logic also changes results? Plus `Engine`? Each addition catches more and produces more false positives, and the right boundary depends on a module structure that is still changing. Note also that ADR-005's fix (making resume genuinely opt-in) already shrinks the exposure window to the moment a user explicitly passes `resume_dir`, which is what makes deferring acceptable.
+
+**Revisit when:** module boundaries have stabilised, or a stale-resume incident actually occurs.
+
+---
+
+## ADR-018 · FUTURE: Parameter validation and degenerate-run detection
+
+**Status:** FUTURE — mechanism needs design. One interim measure taken instead: the history length is exposed as a single named constant in `config.py` so the number is visible rather than buried as a literal.
+
+**Proposed:** Two layers. (1) Static — each strategy declares which of its parameters are measured in bars, and task enumeration rejects any combination exceeding the history length *before* launching, printing the conflict rather than producing a plausible-looking zero row. (2) Runtime — detect that an indicator was `None` for 100% of ticks and report the run as degenerate rather than `ok`.
+
+**Alternatives:** No validation (status quo); runtime detection only; static rejection only.
+
+**Why — the mechanism worth recording, because no component here is buggy:** with `max_lookback=300` and `slow_period=400`, four independent silencing points compose into a silent false result. (1) `self.history[symbol]` is a `deque(maxlen=300)`; at capacity `append` discards from the left with no return value, exception, or counter — it is *designed* to be quiet. (2) `get_closes()` has no `required` argument, so it cannot detect that 400 were wanted. (3) `calculate_sma` returns `None` when `len(prices) < period` — but that is the **same** `None` returned during legitimate warm-up, so "not warmed up yet" and "can never warm up" are indistinguishable by construction. This is the root cause. (4) `next()` does `continue`, and an empty signals dict is the normal state on most ticks, so `Portfolio` cannot complain either. The run reports `status="ok"`, `num_trades=0`, `total_return_pct=0.0`, and a *non-zero* `bar_count` — so it looks like it ran. The information "400 > 300" exists for one instant, at the `calculate_sma` call, where the only available vocabulary is a value already spoken for.
+
+**Why deferred:** The static layer's placement is clear (task-build time is the earliest point where both numbers are known simultaneously), but the runtime layer is not: where the check lives, what status it reports, and how it avoids firing on strategies that are legitimately quiet all need design. Neither blocks the current architecture.
+
+---
+
+## ADR-019: `TradingCalendar` owns all time-derived quantities; sessions are derived from data and validated against a package
+
+**Decided:** Introduce a `TradingCalendar` that is the single source for every time-derived number in the system. Its session table is **derived from the observed bar timestamps**, with an exchange-calendar package (`exchange_calendars` / `pandas_market_calendars`) used to *validate* that derivation rather than to produce it. It is injected into strategies as an attribute, exactly as `Portfolio` already is, so `Strategy.next()`'s signature does not change.
+
+**Alternatives:** Calendar-as-truth, where the simulation clock iterates sessions the package emits (zipline's model); hardcoded holiday and session-hour constants; leave time arithmetic inside individual strategies (status quo).
+
+**Why the dependency is inverted:** A package's trust decomposes into four layers of very different reliability — UTC/DST conversion (IANA tzdata, authoritative), holiday rules (stable convention), ad-hoc closures (knowable only retrospectively), and **regular session hours (constants in the package class, only as current as the last release)**. That last layer is the exposure: a schedule change such as an exchange extending its trading day requires a maintainer to notice and ship. But for backtesting the bars *are* ground truth about when the market was open — no bars on a date means it was closed; bars ending early mean a half day. Deriving from data therefore removes any dependence on the package being correct about the past, adapts automatically to schedule changes, and repurposes the package as a **data-quality checker** the project currently lacks: when the package says "trading day" and the data has no bars, that is a missing-download bug, not a holiday, and it is presently undetectable. Zipline is the cautionary case for the opposite choice. The backtest/live asymmetry is the underlying reason: backtesting looks backward, where data exists and can be truth; live trading looks forward, where tomorrow's bars do not exist yet and a calendar *must* be trusted. Same code, opposite trust direction.
+
+**Scope:** Replaces `SMA_OS_Dynamic._minutes_to_close()` entirely — that method hardcodes `hour=21` (wrong for half the year), has no early-close awareness (on a 13:00 ET half day it believes three extra hours remain), and carries an `except ValueError: return 60` fallback that would silently report "60 minutes to close" on every bar forever if the hour parameter were ever swept out of range. Also supplies a measured `periods_per_year()`, replacing `analyzer.py`'s hardcoded `252 * 390`.
+
+**Named `TradingCalendar`, not `SessionClock`:** once it owns session bounds, annualization factors, and the data cross-check, "clock" understates it; `TradingCalendar` also matches backtrader's vocabulary, so it reads as familiar rather than bespoke.
+
+**Corollary — a classification rule that belongs in `CLAUDE.md`, not here:** bar counts are not uniformly wrong. A count used as a *proxy for a duration* is (`window_n = 390  # 1 trading day` breaks on half days, gaps, and extended hours). A count that genuinely *is* a count is not (`slow_period = 20` — an SMA is defined in observations, and "20 minutes" would be wrong). Conversion factors between the two (`252`, `390`, `365.25`) should be measured from the data, never assumed.
+
+---
+
+## ADR-020: Regular trading hours only, as a switch, defaulted on
+
+**Decided:** Bar filtering to regular trading hours is a switch, defaulted **on**. Extended-hours and overnight bars are excluded from backtests unless explicitly enabled.
+
+**Alternatives:** Always include extended hours (status quo — roughly half of raw DB bars); always exclude with no switch; make it a per-strategy setting.
+
+**Why:** The two regimes have different data quality, not just different hours. Regular-session bars are dense and near-complete — approximately 390 one-minute bars per session, with gaps rare. Extended and overnight bars are sparse: liquidity collapses and there are long stretches represented by a single bar. `TimeAlignedIterator` forward-fills across gaps, but that fill logic has not been validated against real or mock trading, so including extended hours means compounding an unvalidated fill with the data most likely to stress it. Defaulting on restricts backtests to the only regime currently trusted. It is a switch rather than a deletion because extended-hours behavior is a legitimate future research target and the bars are already in the database.
+
+**Why this is one decision with ADR-019 rather than a separate data-filtering choice:** because `periods_per_year()` is *measured* rather than assumed, flipping the switch keeps annualization self-consistent automatically. Under the old hardcoded `252 * 390`, enabling extended hours would have understated the annualization factor by roughly 1.6x and silently mis-scaled `volatility_annualized_pct` and `sharpe` — the latter being a column the ranking output is sorted on. (Mitigating detail, worth knowing: that error is a uniform multiplier across a batch, so ranking *order* survives and only absolute values are meaningless.)
+
+**Consequence requiring action — this is ADR-013's problem, found again:** the RTH flag changes results but is not currently an input to `compute_run_id`. Two batches differing only in this switch would collide on `run_id`, and an opt-in resume could return extended-hours results for a regular-hours request. The flag must enter the hash when the switch is implemented.
+
+---
+
+## ADR-021: Overwriting is the exposed switch; reusing committed results is the default (supersedes ADR-005)
+
+**Decided:** `BatchRunner.run()` takes `overwrite: bool = False`. By default only tasks with no committed result are submitted. `overwrite=True` discards and recomputes everything regardless of what is committed, and is logged at WARNING so the action leaves a durable trace in `errors.log`. The `resume` parameter is removed.
+
+**Alternatives:** ADR-005's scheme (`resume: bool = False`, defaulting to full re-execution); keep `resume` and add `overwrite` beside it; expose neither and always reuse.
+
+**Why — two mechanisms were sharing one flag.** Deciding that a committed result is no longer valid has two independent sources. *Automatic invalidation* is the program's job: comparing declared inputs it can hash and rejecting individual stale tasks (ADR-022). *Human override* is the operator's: they know things the hash cannot reach — that the bar database was re-adjusted, that a shared indicator function was edited — and issue a global order. The two differ in who decides, in granularity (per task versus whole batch), and in basis (hashable inputs versus outside knowledge). One boolean cannot express "reuse the 188 the program vouches for, re-run the 12 it flagged" while also carrying "ignore all of that, redo everything." Separating them keeps each mechanism's meaning intact as the automatic layer grows.
+
+**Why the default inverts.** Under ADR-005 the destructive behavior *was* the default, wearing a name that did not sound destructive: `resume=False` meant "re-run and overwrite," so pointing `BatchRunner` at an existing batch directory with default arguments erased it. ADR-005's stated worry — silently reusing results produced by code that has since changed — is real, but it was aimed at the wrong control. That is properly the automatic layer's job (ADR-022), not something worth buying by making destruction the default. And the two risks only ever meet when a caller *deliberately names an existing directory*, at which point "continue this batch" is overwhelmingly the intended meaning; nobody names an existing batch directory intending to wipe it. Making reuse the default also stops "resume" being a mode at all: it becomes simply what running a batch means, which is the honest description — you never want to redo work you already have unless you have a reason, and having a reason is exactly what `overwrite=True` states.
+
+**Corollary:** the config-layer asymmetry this replaces — `resume` derived from `resume_dir`, which left "existing directory, re-run everything" inexpressible — dissolves rather than needing a fix. That combination is now the default plus one explicit flag.
+
+---
+
+## ADR-022 · OPEN: Automatic staleness detection — result-affecting inputs outside the hash
+
+**Status:** OPEN — the pattern is identified and three instances are known; no detection mechanism is implemented. ADR-021's human override is the interim mitigation.
+
+**Problem:** `compute_run_id` hashes strategy identity, `VERSION`, params, universe, time range, and — since ADR-013 — portfolio config. But results also depend on inputs that are *not* hashed, so two runs can share a `run_id` while having been computed under materially different conditions, and reuse then returns the older one silently.
+
+Three instances, all found by the same reasoning:
+
+1. **Portfolio configuration** — capital and position constraints change the metrics. Resolved by ADR-013.
+2. **The regular-trading-hours filter** — changes which bars exist at all. Identified in ADR-020; not yet in the hash.
+3. **The bar database contents** — re-running `utils/adjust_database_sql.py`, or re-ingesting CSVs, invalidates every committed result while every hashed field stays identical. Unlike the other two, `VERSION` discipline offers no mitigation whatsoever here: the strategy code did not change, so there is nothing a human could correctly bump.
+
+**The shape of the pattern, which is the point of recording it:** `run_id` covers *strategy* inputs well and *environment* inputs badly. Strategy identity, params, universe, and time range are hashed; capital constraints only after ADR-013; bar filtering not yet; data contents not at all. Any newly introduced result-affecting input should be checked against the hash by reflex rather than discovered later.
+
+**Candidate mechanisms, none decided:** stamp an explicit ingest/adjustment version into the database when `adjust_database_sql.py` writes it, and hash that — robust, and survives moving the file between machines; hash the database file's `(size, mtime)` — cheap, but mtime changes on a no-op copy and does not survive transfer; or record fingerprints in the run JSON *without* hashing them and compare on reuse, warning rather than diverging the ID — the same tripwire-not-identity distinction ADR-017 draws for source code, and for the same reason: a false positive costs one recomputation.
+
+**Related:** ADR-017 is the *code* identity version of this problem. This entry is the *environment and data* version, and unlike ADR-017 it has no discipline-based fallback.
+
+**Revisit when:** the RTH switch is implemented — instance 2 must be resolved alongside it — or a stale-data reuse actually occurs.
+
