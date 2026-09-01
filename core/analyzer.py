@@ -6,7 +6,7 @@ Calculates metrics, generates reports, and exports results
 from typing import Dict, List, Tuple, Optional, Any
 import numpy as np
 import logging
-from datetime import datetime
+from datetime import datetime, timezone
 
 from core.portfolio import Portfolio
 from core.episodes import build_episodes, episode_stats
@@ -333,7 +333,7 @@ class Analyzer:
             writer.writerow(["timestamp", "datetime", "equity", "cash", "positions_value", "num_positions"])
 
             for timestamp, equity, cash, pos_val, num_pos in self.portfolio._equity_history:
-                dt_str = datetime.utcfromtimestamp(timestamp / 1000).strftime("%Y-%m-%d %H:%M:%S")
+                dt_str = datetime.fromtimestamp(timestamp / 1000, tz=timezone.utc).strftime("%Y-%m-%d %H:%M:%S")
                 writer.writerow([timestamp, dt_str, equity, cash, pos_val, num_pos])
 
         logging.info(f"Exported equity curve to {filepath}")

@@ -8,7 +8,7 @@ Exit: Optimal Stopping with Dynamic Window based on time until market close
 """
 
 from typing import Dict, Optional
-from datetime import datetime
+from datetime import datetime, timezone
 from database.schema import Bar
 from strategies.base import Strategy
 from strategies.indicators import calculate_sma
@@ -167,7 +167,7 @@ class SMA_OS_Dynamic(Strategy):
         """
         # Convert to seconds and create datetime object
         timestamp_sec = timestamp_ms / 1000.0
-        dt_current = datetime.utcfromtimestamp(timestamp_sec)
+        dt_current = datetime.fromtimestamp(timestamp_sec, tz=timezone.utc)
 
         # Create market close time for current day
         try:

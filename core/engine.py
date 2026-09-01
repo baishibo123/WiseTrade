@@ -5,7 +5,7 @@ Orchestrates data flow, strategy execution, and portfolio management
 
 from typing import Dict, List, Any, Type, Optional
 import logging
-from datetime import datetime
+from datetime import datetime, timezone
 
 from datafeed.db_feed import BaseFeed, DatabaseFeed
 from database.schema import Bar
@@ -229,7 +229,7 @@ class Engine:
 
     def _format_timestamp(self, timestamp: int) -> str:
         """Format Unix millis timestamp as readable string"""
-        return datetime.utcfromtimestamp(timestamp / 1000).strftime("%Y-%m-%d %H:%M")
+        return datetime.fromtimestamp(timestamp / 1000, tz=timezone.utc).strftime("%Y-%m-%d %H:%M")
 
     # ========================================================================
     # Class Methods - Batch Execution

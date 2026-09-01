@@ -10,6 +10,7 @@ import logging
 
 from database.schema import Bar
 from strategies.indicators import *  # Import all indicator functions
+from config import DEFAULT_MAX_LOOKBACK
 
 
 class Strategy(ABC):
@@ -74,7 +75,7 @@ class Strategy(ABC):
         self.portfolio = None  # Will be injected by Engine
 
         # Per-symbol bar history
-        self._lookback = self.params.get('max_lookback', 300)
+        self._lookback = self.params.get('max_lookback', DEFAULT_MAX_LOOKBACK)
         self.history: Dict[str, Deque[Bar]] = {
             symbol: deque(maxlen=self._lookback) for symbol in universe
         }

@@ -18,7 +18,7 @@ import os
 import sys
 import time
 from concurrent.futures import ProcessPoolExecutor
-from datetime import datetime
+from datetime import datetime, timezone
 from logging.handlers import QueueHandler, QueueListener
 from pathlib import Path
 from typing import Optional
@@ -369,7 +369,7 @@ class BatchRunner:
 
         manifest = {
             "batch_dir": str(self.batch_dir),
-            "built_at": datetime.utcnow().isoformat() + "Z",
+            "built_at": datetime.now(timezone.utc).isoformat().replace("+00:00", "Z"),
             "n_runs": len(summaries),
             "n_ok": sum(1 for r in summaries if r["status"] == "ok"),
             "n_error": sum(1 for r in summaries if r["status"] == "error"),
@@ -398,6 +398,6 @@ class BatchRunner:
 
 def make_batch_dir(results_root: Path, batch_name: str) -> Path:
     """Compose a timestamped batch directory under results/."""
-    stamp = datetime.utcnow().strftime("%Y%m%d_%H%M%S")
+    stamp = datetime.now(timezone.utc).strftime("%Y%m%d_%H%M%S")
     safe_name = batch_name.replace(" ", "_").replace("/", "_")
     return Path(results_root) / f"{safe_name}_{stamp}"

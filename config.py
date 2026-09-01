@@ -140,6 +140,19 @@ POSTGRESQL_CONFIG = {
 DATABASE_CONFIG = POSTGRESQL_CONFIG if DB_TYPE == "postgresql" else SQLITE_CONFIG
 
 # ============================================================================
+# Strategy Defaults
+# ============================================================================
+
+# How many bars of per-symbol history a Strategy retains (base.Strategy keeps a
+# deque of this length). Named here rather than buried as a literal because it
+# is a silent ceiling: an indicator period longer than this can never be
+# satisfied, so calculate_sma returns None on every tick, the strategy emits no
+# signals, and the run completes "ok" with zero trades and 0.00% return. Nothing
+# reports the conflict -- see ADR-018 for the four points at which it is
+# swallowed. If you sweep a lookback-like parameter, check it against this.
+DEFAULT_MAX_LOOKBACK = 300
+
+# ============================================================================
 # Backtesting Defaults
 # ============================================================================
 # UNREFERENCED as of this commit: nothing outside config.py reads any name in
