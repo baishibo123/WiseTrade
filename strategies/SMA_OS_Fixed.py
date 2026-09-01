@@ -40,7 +40,14 @@ class SMA_OS_Fixed(Strategy):
 
         # Exit parameters (Optimal Stopping)
         self.window_n = self.params.get('window_n', 390)  # 1 trading day (6.5 hours)
-        self.observation_idx = int(self.window_n * 0.37)  # ~144 bars
+        # Fraction of the window spent observing before the strategy will
+        # accept anything. 0.37 is 1/e, the classical secretary-problem
+        # threshold -- optimal only under that problem's assumptions (no
+        # recall, unknown distribution, maximise P(picking the single best)).
+        # Intraday price paths satisfy none of those, so the value is a
+        # hypothesis, not a constant. Exposed so it can be swept.
+        self.observation_ratio = self.params.get('observation_ratio', 0.37)
+        self.observation_idx = int(self.window_n * self.observation_ratio)
 
         # Per-symbol state tracking
         self._state = {

@@ -43,6 +43,14 @@ class SMA_OS_Dynamic(Strategy):
         # - 21:00 UTC (Standard Time / Winter)
         self.market_close_hour_utc = self.params.get('market_close_hour_utc', 21)
 
+        # Fraction of the window spent observing before the strategy will
+        # accept anything. 0.37 is 1/e, the classical secretary-problem
+        # threshold -- optimal only under that problem's assumptions (no
+        # recall, unknown distribution, maximise P(picking the single best)).
+        # Intraday price paths satisfy none of those, so the value is a
+        # hypothesis, not a constant. Exposed so it can be swept.
+        self.observation_ratio = self.params.get('observation_ratio', 0.37)
+
         # Minimum minutes required to enter trade
         self.min_minutes_to_trade = self.params.get('min_minutes_to_trade', 30)
 
@@ -138,7 +146,7 @@ class SMA_OS_Dynamic(Strategy):
 
                         # Set dynamic window parameters
                         state['window_n'] = minutes_remaining
-                        state['observation_idx'] = int(state['window_n'] * 0.37)
+                        state['observation_idx'] = int(state['window_n'] * self.observation_ratio)
                         state['bars_held'] = 0
                         state['max_price_obs'] = bar.close
 
