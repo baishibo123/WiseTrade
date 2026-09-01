@@ -113,13 +113,23 @@ class Strategy(ABC):
         Returns:
             Optional signals dict (e.g., to close all positions)
         """
-        # Default: close all open positions
-        if self.portfolio and self.portfolio.positions:
-            logging.info(f"Strategy '{self.name}' ending: closing {len(self.portfolio.positions)} positions")
-            return {
-                symbol: {"action": "SELL", "score": 1.0}
-                for symbol in self.portfolio.positions.keys()
-            }
+        # Default: do nothing. Positions still open at the end of the backtest
+        # stay open.
+        #
+        # This used to force-liquidate everything. Two reasons it no longer does.
+        # (1) It cost nothing to remove: the equity curve is already marked to
+        #     market, so final equity -- and therefore every returns-based metric
+        #     -- is identical whether or not the position is sold at that last
+        #     close. Force-closing at the same close price makes the very same
+        #     zero-slippage assumption.
+        # (2) It corrupted the trade statistics. A forced exit at the backtest
+        #     boundary is an artifact of where the window happens to end, not a
+        #     decision the strategy made, yet it was scored as a win or a loss
+        #     like any other. Open positions are now reported as open episodes
+        #     and excluded from win rates (see core/episodes.py).
+        #
+        # A strategy that genuinely needs end-of-run behavior can still override
+        # this and return signals.
         return None
 
     # ========================================================================

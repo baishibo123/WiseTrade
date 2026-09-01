@@ -9,6 +9,7 @@ import logging
 from datetime import datetime
 
 from core.portfolio import Portfolio
+from core.episodes import build_episodes, episode_stats
 
 
 class Analyzer:
@@ -133,53 +134,16 @@ class Analyzer:
             calmar = 0.0
 
         # ================================================================
-        # Trade Statistics
+        # Trade Statistics — episode-based (see core/episodes.py)
         # ================================================================
+        # The unit of account is the position episode (0 -> nonzero -> 0), not
+        # the fill. Fill-level win rates can be moved from 50% to 94% purely by
+        # slicing one exit into many, with identical economics; episodes are
+        # invariant to that by construction. Fill counts survive as the
+        # avg_entry_fills / avg_exit_fills diagnostics.
+        episodes = build_episodes(trades)
+        trade_stats = episode_stats(episodes, last_timestamp=int(timestamps[-1]))
 
-        # Separate buy and sell trades
-        sell_trades = [t for t in trades if t["action"] == "SELL"]
-
-        num_trades = len(sell_trades)
-
-        if num_trades > 0:
-            # Win/Loss analysis
-            winning_trades = [t for t in sell_trades if t.get("pnl", 0) > 0]
-            losing_trades = [t for t in sell_trades if t.get("pnl", 0) < 0]
-
-            num_wins = len(winning_trades)
-            num_losses = len(losing_trades)
-
-            win_rate_pct = (num_wins / num_trades) * 100
-
-            # Profit/Loss statistics
-            total_wins = sum(t["pnl"] for t in winning_trades)
-            total_losses = abs(sum(t["pnl"] for t in losing_trades))
-
-            profit_factor = total_wins / total_losses if total_losses > 0 else 0.0
-
-            avg_win = total_wins / num_wins if num_wins > 0 else 0.0
-            avg_loss = total_losses / num_losses if num_losses > 0 else 0.0
-
-            largest_win = max([t["pnl"] for t in winning_trades]) if winning_trades else 0.0
-            largest_loss = min([t["pnl"] for t in losing_trades]) if losing_trades else 0.0
-
-            # Average holding period (in bars)
-            # Note: This requires tracking entry times, placeholder for now
-            avg_bars_per_trade = self.bar_count / num_trades if num_trades > 0 else 0
-
-        else:
-            # No trades completed
-            num_wins = 0
-            num_losses = 0
-            win_rate_pct = 0.0
-            profit_factor = 0.0
-            avg_win = 0.0
-            avg_loss = 0.0
-            largest_win = 0.0
-            largest_loss = 0.0
-            avg_bars_per_trade = 0
-
-        # ================================================================
         # Portfolio Statistics
         # ================================================================
 
@@ -212,16 +176,13 @@ class Analyzer:
             "max_drawdown_pct": round(max_drawdown_pct, 3),
             "calmar": round(calmar, 3),
 
-            # Trade Statistics
-            "num_trades": num_trades,
-            "num_wins": num_wins,
-            "num_losses": num_losses,
-            "win_rate_pct": round(win_rate_pct, 2),
-            "profit_factor": round(profit_factor, 3),
-            "avg_win": round(avg_win, 2),
-            "avg_loss": round(avg_loss, 2),
-            "largest_win": round(largest_win, 2),
-            "largest_loss": round(largest_loss, 2),
+            # Trade Statistics — DIAGNOSTICS, not ground truth.
+            # Everything above this line derives from the mark-to-market equity
+            # curve and is immune to how fills are sliced. Everything below is
+            # trade accounting; prefer the returns metrics when ranking. Keys
+            # are spread in from episode_stats() — see core/episodes.py for
+            # what each of the three win rates means.
+            **trade_stats,
 
             # Portfolio Statistics
             "avg_positions": round(avg_positions, 2),
@@ -249,15 +210,7 @@ class Analyzer:
             "volatility_annualized_pct": 0.0,
             "max_drawdown_pct": 0.0,
             "calmar": 0.0,
-            "num_trades": 0,
-            "num_wins": 0,
-            "num_losses": 0,
-            "win_rate_pct": 0.0,
-            "profit_factor": 0.0,
-            "avg_win": 0.0,
-            "avg_loss": 0.0,
-            "largest_win": 0.0,
-            "largest_loss": 0.0,
+            **episode_stats([]),
             "avg_positions": 0.0,
             "max_positions_held": 0,
             "final_cash": self.portfolio.initial_cash,
@@ -319,11 +272,15 @@ class Analyzer:
         print(f"Volatility (Ann):  {m['volatility_annualized_pct']:>12,.2f}%")
         print(f"Calmar Ratio:      {m['calmar']:>12,.2f}")
 
-        print("\n--- TRADE STATISTICS ---")
-        print(f"Total Trades:      {m['num_trades']:>12,}")
-        print(f"Winning Trades:    {m['num_wins']:>12,}")
-        print(f"Losing Trades:     {m['num_losses']:>12,}")
-        print(f"Win Rate:          {m['win_rate_pct']:>12,.2f}%")
+        print("\n--- TRADE DIAGNOSTICS (episode-based) ---")
+        print(f"Episodes (closed): {m['num_episodes']:>12,}")
+        print(f"  still open:      {m['num_open_episodes']:>12,}")
+        print(f"Winning / Losing:  {m['num_wins']:>12,} / {m['num_losses']:,}")
+        print(f"Win Rate (count):  {m['win_rate_count_pct']:>12,.2f}%   how often I was right")
+        print(f"Win Rate (notion): {m['win_rate_notional_pct']:>12,.2f}%   share of committed capital that won")
+        print(f"Win Rate (time):   {m['win_rate_time_pct']:>12,.2f}%   share of exposure time that won")
+        print(f"  size skew:       {m['win_rate_size_skew_pct']:>+12,.2f}pp  count-notional; large = small wins, big losses")
+        print(f"Fills per episode: {m['avg_entry_fills']:>12,.2f} in / {m['avg_exit_fills']:,.2f} out")
         print(f"Profit Factor:     {m['profit_factor']:>12,.2f}")
         print(f"Avg Win:           ${m['avg_win']:>12,.2f}")
         print(f"Avg Loss:          ${m['avg_loss']:>12,.2f}")

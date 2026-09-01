@@ -1,7 +1,6 @@
 # core/portfolio.py
 from typing import List, Dict, Any, Optional, Tuple
 from datetime import datetime
-import pandas as pd
 import logging
 
 from database.schema import Bar
@@ -488,13 +487,23 @@ class Portfolio:
 
         total_equity = self.cash + positions_value
 
-        self._equity_history.append((
+        point = (
             current_timestamp,
             total_equity,
             self.cash,
             positions_value,
             len(self.positions)
-        ))
+        )
+
+        # One row per timestamp. A second update at the same instant -- which
+        # happens when Engine executes on_end() signals against the final bar --
+        # replaces the earlier row rather than appending beside it. Otherwise the
+        # curve stops being uniquely indexed by time and any set_index/join/
+        # resample on the Parquet output silently misbehaves.
+        if self._equity_history and self._equity_history[-1][0] == current_timestamp:
+            self._equity_history[-1] = point
+        else:
+            self._equity_history.append(point)
 
     # ========================================================================
     # Properties
@@ -508,8 +517,15 @@ class Portfolio:
         return self._equity_history[-1][1]
 
     @property
-    def num_trades(self) -> int:
-        """Total number of completed trades (closed positions)"""
+    def num_exit_fills(self) -> int:
+        """
+        Count of SELL fills — NOT a trade count.
+
+        Renamed from num_trades: one position can be exited in any number of
+        fills, so this number is a bookkeeping artifact and must never be used
+        as a denominator. For trade statistics use core.episodes, which counts
+        position episodes and is invariant to how an exit is sliced.
+        """
         return len([t for t in self._trades if t["action"] == "SELL"])
 
     def get_position_summary(self) -> Dict[str, Dict[str, float]]:

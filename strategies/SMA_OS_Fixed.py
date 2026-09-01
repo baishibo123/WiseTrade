@@ -24,6 +24,13 @@ class SMA_OS_Fixed(Strategy):
     - Time limit: Force exit after N bars
     """
 
+    # Bumped from the inherited 1.0 at the point the batch layer became
+    # usable: prior results were produced against the unadjusted bar
+    # database (config.SQLITE_CONFIG pointed at us_market_1min.sqlite) and
+    # under a run_id scheme that did not hash portfolio config (ADR-013).
+    # Neither is visible to the hash, so the bump is what separates them.
+    VERSION = "1.2"
+
     def __init__(self, universe, params=None):
         super().__init__(universe, params)
 
