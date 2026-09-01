@@ -1,0 +1,42 @@
+# Line endings: LF in the repository, LF in the working tree, everywhere.
+#
+# Why: this repo is developed on both Windows and macOS. Before this file, a
+# save on one machine could rewrite a file's endings and produce a diff where
+# every line changed -- the main<->feature comparison showed 4,950 changed
+# lines for 765 lines of real change, which is exactly how a real bug hides
+# during review.
+#
+# `text=auto` normalizes to LF on commit; `eol=lf` also checks out LF, so the
+# Windows and macOS working trees are byte-identical rather than
+# platform-dependent. Python, git, and modern editors all read LF natively on
+# Windows, so nothing needs to change in how the code is run.
+#
+# NOTE: this file governs future commits only. Existing CRLF files are
+# renormalized on their next commit; to do them all at once, run
+# `git add --renormalize . && git commit` -- planned for after
+# feature/update_march_29 merges into main.
+* text=auto eol=lf
+
+# Binary: never normalize, never diff as text.
+*.sqlite      binary
+*.sqlite-wal  binary
+*.sqlite-shm  binary
+*.parquet     binary
+*.png         binary
+*.jpg         binary
+*.jpeg        binary
+*.gif         binary
+*.ico         binary
+*.pdf         binary
+*.xlsx        binary
+
+# Text, declared explicitly so `text=auto` never has to guess.
+*.py    text
+*.md    text
+*.csv   text
+*.json  text
+*.toml  text
+*.yml   text
+*.yaml  text
+*.sql   text
+*.txt   text
