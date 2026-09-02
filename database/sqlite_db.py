@@ -34,7 +34,7 @@ TECH_100 = {
     "CSCO", "DELL", "HPQ", "HPE", "GLW", "STX", "WDC", "NTAP", "SMCI",
     "PSTG", "IONQ",
     # Fintech / Payments
-    "V", "MA", "PYPL", "FIS", "FISV", "GPN", "AFRM", "TOST"
+    "V", "MA", "PYPL", "FIS", "FI", "GPN", "AFRM", "TOST"   # FI = Fiserv (was FISV until 2023)
 }
 
 
@@ -74,86 +74,122 @@ class SQLiteDatabase:
         self.conn.executescript(SQLITE_CREATE_TABLE)
         logging.info("Table 'bars' and index created/verified")
 
-    def load_all_raw_data(self, show_progress: bool = True) -> None:
+    def load_all_raw_data(self, show_progress: bool = True, symbols=None) -> None:
+        """
+        Ingest raw 1-minute CSVs into the bars table.
+
+        Layout expected: <root>/YYYYMM/YYYYMMDD/SYMBOL.csv (the vendor buckets
+        by UTC date, so a session's post-20:00-ET tail lands in the next day's
+        folder -- harmless here because bars are keyed by their own timestamp).
+
+        symbols: iterable to ingest; defaults to TECH_100.
+        """
         start_time = time.time()
         self.connect()
         self.create_table_and_index()
 
-        # Find every CSV under the configured raw-data root. Validated here
-        # rather than at config import time: importing config must not fail on
-        # a machine that only reads the prebuilt DB and never ingests CSVs.
         raw_data_root = require_raw_data_root()
-        csv_files = list(raw_data_root.rglob("*.csv"))
-        if not csv_files:
+        wanted = set(TECH_100 if symbols is None else symbols)
+
+        # Address files directly instead of rglob("*.csv"). The tree holds ~2.5M
+        # files; rglob would walk and materialise every one of them into a list
+        # before the first row is read, to then discard all but ~57k. Composing
+        # <day>/<SYMBOL>.csv costs one stat per candidate instead.
+        day_dirs = sorted(d for d in raw_data_root.glob("*/*") if d.is_dir())
+        if not day_dirs:
+            # Flat or unknown layout: fall back to a walk.
+            logging.warning(f"No YYYYMM/YYYYMMDD folders under {raw_data_root}; falling back to rglob")
+            candidates = [(p, p.stem.upper()) for p in raw_data_root.rglob("*.csv")]
+            candidates = [(p, sym) for p, sym in candidates if sym in wanted]
+        else:
+            candidates = [(d / f"{sym}.csv", sym) for d in day_dirs for sym in sorted(wanted)]
+
+        if not candidates:
             raise FileNotFoundError(f"No CSV files found under {raw_data_root}")
 
         total_inserted = 0
-        pbar = tqdm(csv_files, desc="Loading TECH_100 → SQLite", unit="file", disable=not show_progress)
+        missing = 0
+        pending: list[tuple] = []
+        cur = self.conn.cursor()
+        pbar = tqdm(candidates, desc="Loading → SQLite", unit="file", disable=not show_progress)
 
-        for csv_path in pbar:
-            symbol = csv_path.stem.upper()   # filename without .csv → e.g. "AAPL"
-            if symbol not in TECH_100:
-                continue  # Skip non-tech stocks → keeps DB small & submittable
+        # Batch across files. The connection is in autocommit mode, so one
+        # executemany per file would be one transaction (and one fsync) per
+        # file -- ~57k of them. Committing every BATCH_ROWS keeps each
+        # transaction large enough to amortise that.
+        BATCH_ROWS = 500_000
 
-            inserted = self._load_single_csv(csv_path, symbol)
-            total_inserted += inserted
+        def flush():
+            nonlocal pending
+            if not pending:
+                return 0
+            cur.execute("BEGIN")
+            cur.executemany(
+                "INSERT OR IGNORE INTO bars (symbol, datetime, open, high, low, close, volume) "
+                "VALUES (?, ?, ?, ?, ?, ?, ?)",
+                pending,
+            )
+            self.conn.commit()
+            n, pending = len(pending), []
+            return n
 
-            pbar.set_postfix({
-                "symbol": symbol,
-                "inserted": f"{total_inserted:,}",
-                "file": csv_path.name
-            })
+        for csv_path, symbol in pbar:
+            if not csv_path.exists():
+                missing += 1
+                continue
+            pending.extend(self._read_csv_records(csv_path, symbol))
+            if len(pending) >= BATCH_ROWS:
+                total_inserted += flush()
+                pbar.set_postfix(rows=f"{total_inserted:,}")
+        total_inserted += flush()
 
         self.vacuum_and_optimize()
 
         duration = time.time() - start_time
         print("\nSQLite Database Successfully Created!")
-        print(f"   Symbols loaded   : {len(TECH_100)} (TECH_100 only)")
+        print(f"   Symbols requested: {len(wanted)}")
+        print(f"   Files read       : {len(candidates) - missing:,} ({missing:,} absent)")
         print(f"   Total bars       : {total_inserted:,}")
         print(f"   Time elapsed     : {duration:.1f} seconds")
         print(f"   DB size          : {self.db_path.stat().st_size / 1024**3:.2f} GB")
         print(f"   Path             : {self.db_path}")
 
-    def _load_single_csv(self, csv_path: Path, symbol: str) -> int:
+    def _read_csv_records(self, csv_path: Path, symbol: str) -> list:
         """
-        Load one symbol's daily CSV using pandas → convert → bulk insert
-        Uses 'eob' column → end-of-bar timestamp (broker standard)
+        Parse one symbol-day CSV into (symbol, datetime_ms, o, h, l, c, v) rows.
+
+        Uses 'eob' (end of bar): a bar timestamped at its close can be acted on
+        at that instant. Using 'bob' would let a strategy see a close one minute
+        before it happened.
         """
         try:
-            # Read only needed columns + parse eob directly
             df = pd.read_csv(
                 csv_path,
                 usecols=["eob", "open", "high", "low", "close", "volume"],
                 dtype={"open": "float64", "high": "float64", "low": "float64",
                        "close": "float64", "volume": "float64"},
-                parse_dates=["eob"]
+                parse_dates=["eob"],
             )
         except Exception as e:
             logging.warning(f"Failed to read {csv_path}: {e}")
-            return 0
+            return []
 
         if df.empty:
-            return 0
+            return []
 
-        # Convert eob → Unix milliseconds (UTC, end-of-bar)
-        df["datetime"] = df["eob"].astype('int64') // 1_000_000  # ns → ms
-        df = df.drop(columns=["eob"])
+        # Resolution-independent ns->ms. NOT `.astype("int64") // 1_000_000`:
+        # that assumed datetime64[ns], but pandas >= 2.0 infers resolution from
+        # the source and these files parse as datetime64[us], so the division
+        # silently produced SECONDS -- every bar landing in January 1970, with
+        # no error raised and every backtest then matching zero rows.
+        stamps = df["eob"].values.astype("datetime64[ms]").astype("int64")
 
-        # Build list of tuples: (symbol, datetime_ms, o, h, l, c, v)
-        records = [
-            (symbol, int(row["datetime"]), row["open"], row["high"], row["low"], row["close"], row["volume"])
-            for _, row in df.iterrows()
+        # itertuples, not iterrows: measured ~10x faster, and iterrows boxes
+        # each row into a Series.
+        return [
+            (symbol, int(ts), r.open, r.high, r.low, r.close, r.volume)
+            for ts, r in zip(stamps, df.itertuples(index=False))
         ]
-
-        # Bulk insert with duplicate protection
-        cur = self.conn.cursor()
-        cur.executemany("""
-            INSERT OR IGNORE INTO bars (symbol, datetime, open, high, low, close, volume)
-            VALUES (?, ?, ?, ?, ?, ?, ?)
-        """, records)
-        self.conn.commit()
-
-        return len(records)
 
     def vacuum_and_optimize(self) -> None:
         """Final cleanup & optimization — makes queries lightning fast"""

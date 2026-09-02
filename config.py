@@ -16,11 +16,10 @@ import os
 PROJECT_ROOT = Path(__file__).parent
 DB_DIR = PROJECT_ROOT / "db"
 RESULTS_DIR = PROJECT_ROOT / "results"
-# The adjusted DB is what backtests read; the raw one is the ingest staging
-# target that utils/adjust_database_sql.py reads from. Both named here so no
-# script has to hardcode a CWD-relative "../db/..." literal again.
-SQLITE_RAW_DB_PATH = DB_DIR / "us_market_1min.sqlite"
-SQLITE_DB_PATH = DB_DIR / "us_market_1min_adjusted.sqlite"
+# One database. Split adjustment is a view over immutable raw bars
+# (database/adjustments.py), so there is no separate "adjusted" file to keep in
+# sync -- bars, splits, adj_factors and the bars_adjusted view all live here.
+SQLITE_DB_PATH = DB_DIR / "us_market_1min.sqlite"
 
 # The default above stays repo-derived and portable. The override exists because
 # without it there is no way to point a run at a database other than the one

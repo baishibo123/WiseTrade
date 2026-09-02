@@ -2,6 +2,9 @@
 __pycache__/
 .idea/
 *.sqlite
+*.sqlite-wal
+*.sqlite-shm
+*.sqlite-journal
 test.py
 tests/
 results/

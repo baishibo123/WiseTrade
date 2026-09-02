@@ -117,9 +117,13 @@ class DatabaseFeed(BaseFeed):
 
         self.cursor = self.connection.cursor()
 
+        # bars_adjusted, not bars: split adjustment is a view over immutable raw
+        # bars (database/adjustments.py). Reading `bars` directly would silently
+        # yield unadjusted prices -- NVDA would drop 10x on 2024-06-10 and every
+        # metric spanning that date would be wrong.
         self.cursor.execute("""
             SELECT symbol, datetime, open, high, low, close, volume
-            FROM bars
+            FROM bars_adjusted
             WHERE symbol = ? AND datetime >= ? AND datetime <= ?
             ORDER BY datetime
         """, (self.symbol, self.start_datetime, self.end_datetime))
