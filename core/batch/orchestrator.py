@@ -6,7 +6,7 @@ Responsibilities:
 - Spin up cross-process logging (QueueHandler/QueueListener — ADR-012)
 - Submit tasks, drain results in submission order, print progress
 - Persist a derived manifest by scanning runs/ at end (ADR-006)
-- Handle Ctrl+C gracefully: in-flight workers finish, manifest still gets built
+- Handle Ctrl+C: queued tasks are cancelled, running ones finish, manifest built
 """
 
 from __future__ import annotations
@@ -137,7 +137,7 @@ class BatchRunner:
 
         log_queue, listener, manager, saved_logging = self._start_logging()
 
-        pending = self._filter_committed(tasks, overwrite)
+        pending = self._filter_committed(self._dedupe(tasks), overwrite)
         logging.info(
             f"BatchRunner starting: {len(pending)} tasks, {self.n_workers} workers, "
             f"batch_dir={self.batch_dir}"
@@ -148,7 +148,7 @@ class BatchRunner:
             try:
                 self._execute(pending, log_queue)
             except KeyboardInterrupt:
-                logging.warning("Interrupted — in-flight tasks finishing, then writing manifest.")
+                logging.warning("Interrupted — writing a manifest for what completed.")
 
             # Must run INSIDE this try and BEFORE listener.stop(). _build_manifest
             # logs a warning for every unreadable run JSON, and the root logger's
@@ -239,6 +239,29 @@ class BatchRunner:
             root.addHandler(handler)
         root.setLevel(level)
 
+    @staticmethod
+    def _dedupe(tasks: list[BatchTask]) -> list[BatchTask]:
+        """
+        Collapse tasks sharing a run_id. Two such tasks are the same unit of
+        work, and submitting both races two workers onto one result JSON and
+        one curves/<run_id>/portfolio.parquet.tmp -- the committed Parquet can
+        end up an interleaving of two writers.
+
+        Reachable without doing anything unusual: _expand_params unions
+        param_grid with param_list without deduplicating (a documented,
+        supported combination), and the same strategy can be listed twice.
+        """
+        seen: dict[str, BatchTask] = {}
+        for task in tasks:
+            seen.setdefault(task.run_id, task)
+        if len(seen) != len(tasks):
+            logging.warning(
+                f"{len(tasks) - len(seen)} duplicate task(s) collapsed: identical "
+                f"run_id means identical work, and running them concurrently would "
+                f"race on the same output files."
+            )
+        return list(seen.values())
+
     def _filter_committed(self, tasks: list[BatchTask], overwrite: bool) -> list[BatchTask]:
         """
         Return the tasks that should actually be submitted (ADR-021).
@@ -271,6 +294,13 @@ class BatchRunner:
         return remaining
 
     def _execute(self, tasks: list[BatchTask], log_queue) -> None:
+        # Imported before anything is submitted. Raised after submission, an
+        # ImportError here would still wait for every task to finish (the pool's
+        # __exit__ drains), then propagate past run()'s KeyboardInterrupt-only
+        # guard and skip the manifest -- discarding the index for a whole batch
+        # that had already been computed. Here it costs milliseconds.
+        from tqdm import tqdm  # local: keeps `import core.batch` tqdm-free
+
         total = len(tasks)
         done = ok = errors = crashed = 0
         start = time.time()
@@ -297,8 +327,6 @@ class BatchRunner:
             # and errors.log in real time regardless of this ordering.
             submitted = [(task, ex.submit(run_one, task)) for task in tasks]
 
-            from tqdm import tqdm  # local: keeps `import core.batch` tqdm-free
-
             # One aggregate bar, not one per worker. Per-task lines go through
             # logging rather than print(), so every character of text output has
             # a single writer -- the listener thread calling tqdm.write() -- and
@@ -311,33 +339,51 @@ class BatchRunner:
                 leave=True,
                 dynamic_ncols=True,
             ) as pbar:
-                for task, fut in submitted:
-                    done += 1
-                    try:
-                        result: RunResult = fut.result()
-                    except Exception as exc:
-                        crashed += 1
-                        logging.error(
-                            f"[{done}/{total}] {task.run_id} {task.strategy_name} CRASHED: {exc!r}"
-                        )
-                    else:
-                        if result.status == "ok":
-                            ok += 1
-                            logging.info(
-                                f"[{done}/{total}] {task.strategy_name} ok "
-                                f"({result.duration_seconds:.1f}s) {self._format_metrics(result.metrics)}"
+                try:
+                    for task, fut in submitted:
+                        done += 1
+                        try:
+                            result: RunResult = fut.result()
+                        except Exception as exc:
+                            crashed += 1
+                            logging.error(
+                                f"[{done}/{total}] {task.run_id} {task.strategy_name} CRASHED: {exc!r}"
                             )
-                        elif result.status == "error":
-                            errors += 1
-                            last = (result.error or "").strip().splitlines()[-1] if result.error else "?"
-                            # Overlaps the worker's own ERROR line by design: that
-                            # one is keyed by run_id, this one by batch position.
-                            logging.info(f"[{done}/{total}] {task.strategy_name} ERROR: {last}")
+                        else:
+                            if result.status == "ok":
+                                ok += 1
+                                logging.info(
+                                    f"[{done}/{total}] {task.strategy_name} ok "
+                                    f"({result.duration_seconds:.1f}s) {self._format_metrics(result.metrics)}"
+                                )
+                            elif result.status == "error":
+                                errors += 1
+                                last = (result.error or "").strip().splitlines()[-1] if result.error else "?"
+                                # Overlaps the worker's own ERROR line by design:
+                                # that one is keyed by run_id, this by position.
+                                logging.info(f"[{done}/{total}] {task.strategy_name} ERROR: {last}")
 
-                    # try/except/else rather than `continue`, so these two always
-                    # run -- a crashed future previously skipped the bar update.
-                    pbar.update(1)
-                    pbar.set_postfix(ok=ok, err=errors, crashed=crashed, refresh=False)
+                        # try/except/else rather than `continue`, so these two
+                        # always run -- a crashed future previously skipped the
+                        # bar update and desynced it from reality.
+                        pbar.update(1)
+                        pbar.set_postfix(ok=ok, err=errors, crashed=crashed, refresh=False)
+
+                except KeyboardInterrupt:
+                    # Cancel queued work explicitly. Without this, leaving the
+                    # `with` calls shutdown(wait=True) with cancel_futures
+                    # defaulting to False, so every not-yet-started task still
+                    # runs to completion -- Ctrl+C on a 200-task batch blocked
+                    # for hours before run()'s handler was ever reached.
+                    # fut.cancel() returns False for tasks already executing, so
+                    # the count is an exact split between queued and running.
+                    cancelled = sum(1 for _, f in submitted if f.cancel())
+                    logging.warning(
+                        f"Interrupted after {done}/{total}: cancelled {cancelled} queued "
+                        f"task(s), waiting for {max(0, total - done - cancelled)} still "
+                        f"running. Results already committed are kept."
+                    )
+                    raise
 
         elapsed = time.time() - start
         logging.info(

@@ -71,6 +71,20 @@ def _strategy_version(strategy_class: Type) -> str:
     return getattr(strategy_class, "VERSION", "1.0")
 
 
+def _default_results_root() -> Path:
+    """
+    Project-derived absolute results root.
+
+    Path("results") would be relative to the *current working directory*, so
+    running `python /path/to/run_ranking.py` from anywhere but the project root
+    silently wrote the whole batch somewhere else. config.RESULTS_DIR is the
+    PROJECT_ROOT-derived absolute path and was otherwise unreferenced.
+    Imported lazily so importing core.batch does not pull in config.
+    """
+    from config import RESULTS_DIR
+    return RESULTS_DIR
+
+
 # ---------------------------------------------------------------------------
 # Base shared fields
 # ---------------------------------------------------------------------------
@@ -84,7 +98,7 @@ class _CommonBatchConfig:
     end_datetime: int
     n_workers: Optional[int] = None
     save_curves: bool = True
-    results_root: Path = field(default_factory=lambda: Path("results"))
+    results_root: Path = field(default_factory=lambda: _default_results_root())
 
 
 # ---------------------------------------------------------------------------
@@ -130,7 +144,10 @@ class PortfolioBatchConfig(_CommonBatchConfig):
         return tasks
 
     def run(self, resume_dir: Optional[Path] = None, overwrite: bool = False) -> Path:
-        batch_dir = Path(resume_dir) if resume_dir else make_batch_dir(self.results_root, self.batch_name)
+        # resolve(): BatchTask.batch_dir is documented as absolute, and workers
+        # resolve curve and result paths against it. A relative value would be
+        # interpreted against each worker's cwd rather than the parent's.
+        batch_dir = (Path(resume_dir) if resume_dir else make_batch_dir(self.results_root, self.batch_name)).resolve()
         tasks = self.build_tasks(batch_dir)
         return BatchRunner(batch_dir, n_workers=self.n_workers).run(tasks, overwrite=overwrite)
 
@@ -190,6 +207,9 @@ class PerSymbolBatchConfig(_CommonBatchConfig):
         return tasks
 
     def run(self, resume_dir: Optional[Path] = None, overwrite: bool = False) -> Path:
-        batch_dir = Path(resume_dir) if resume_dir else make_batch_dir(self.results_root, self.batch_name)
+        # resolve(): BatchTask.batch_dir is documented as absolute, and workers
+        # resolve curve and result paths against it. A relative value would be
+        # interpreted against each worker's cwd rather than the parent's.
+        batch_dir = (Path(resume_dir) if resume_dir else make_batch_dir(self.results_root, self.batch_name)).resolve()
         tasks = self.build_tasks(batch_dir)
         return BatchRunner(batch_dir, n_workers=self.n_workers).run(tasks, overwrite=overwrite)

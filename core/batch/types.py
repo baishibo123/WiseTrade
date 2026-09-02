@@ -29,7 +29,7 @@ class BatchTask:
     start_datetime: int                     # Unix millis UTC
     end_datetime: int                       # Unix millis UTC
     portfolio_config: dict[str, Any]
-    batch_dir: str                          # absolute path to results/<batch_id>/
+    batch_dir: str                          # absolute path; resolved in BatchConfig.run()
     save_curves: bool = True
 
 
