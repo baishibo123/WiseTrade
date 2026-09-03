@@ -71,6 +71,13 @@ def _strategy_version(strategy_class: Type) -> str:
     return getattr(strategy_class, "VERSION", "1.0")
 
 
+def _resolve_rth(flag: Optional[bool]) -> bool:
+    if flag is None:
+        from config import REGULAR_HOURS_ONLY
+        return REGULAR_HOURS_ONLY
+    return bool(flag)
+
+
 def _default_results_root() -> Path:
     """
     Project-derived absolute results root.
@@ -98,6 +105,7 @@ class _CommonBatchConfig:
     end_datetime: int
     n_workers: Optional[int] = None
     save_curves: bool = True
+    regular_hours_only: Optional[bool] = None   # None -> config.REGULAR_HOURS_ONLY
     results_root: Path = field(default_factory=lambda: _default_results_root())
 
 
@@ -115,6 +123,7 @@ class PortfolioBatchConfig(_CommonBatchConfig):
 
     def build_tasks(self, batch_dir: Path) -> list[BatchTask]:
         universe = _resolve_universe(self.universe)
+        rth = _resolve_rth(self.regular_hours_only)
         tasks: list[BatchTask] = []
         for strategy_class, spec in self.strategies:
             version = _strategy_version(strategy_class)
@@ -127,6 +136,7 @@ class PortfolioBatchConfig(_CommonBatchConfig):
                     start_datetime=self.start_datetime,
                     end_datetime=self.end_datetime,
                     portfolio_config=self.portfolio_config,
+                    regular_hours_only=rth,
                 )
                 tasks.append(BatchTask(
                     run_id=run_id,
@@ -138,6 +148,7 @@ class PortfolioBatchConfig(_CommonBatchConfig):
                     start_datetime=self.start_datetime,
                     end_datetime=self.end_datetime,
                     portfolio_config=self.portfolio_config,
+                    regular_hours_only=rth,
                     batch_dir=str(batch_dir),
                     save_curves=self.save_curves,
                 ))
@@ -169,6 +180,7 @@ class PerSymbolBatchConfig(_CommonBatchConfig):
 
     def build_tasks(self, batch_dir: Path) -> list[BatchTask]:
         symbols = _resolve_universe(self.universe)
+        rth = _resolve_rth(self.regular_hours_only)
         tasks: list[BatchTask] = []
 
         for strategy_class, spec in self.strategies:
@@ -190,6 +202,7 @@ class PerSymbolBatchConfig(_CommonBatchConfig):
                         start_datetime=self.start_datetime,
                         end_datetime=self.end_datetime,
                         portfolio_config=portfolio_config,
+                        regular_hours_only=rth,
                     )
                     tasks.append(BatchTask(
                         run_id=run_id,
@@ -201,6 +214,7 @@ class PerSymbolBatchConfig(_CommonBatchConfig):
                         start_datetime=self.start_datetime,
                         end_datetime=self.end_datetime,
                         portfolio_config=portfolio_config,
+                        regular_hours_only=rth,
                         batch_dir=str(batch_dir),
                         save_curves=self.save_curves,
                     ))

@@ -39,7 +39,9 @@ class Analyzer:
             portfolio: Portfolio,
             universe: List[str],
             strategy_name: str = "Unknown",
-            bar_count: int = 0
+            bar_count: int = 0,
+            calendar=None,
+            regular_hours_only: bool = True
     ):
         """
         Initialize analyzer
@@ -54,6 +56,8 @@ class Analyzer:
         self.universe = universe
         self.strategy_name = strategy_name
         self.bar_count = bar_count
+        self.calendar = calendar
+        self.regular_hours_only = regular_hours_only
 
         # Calculate all metrics
         self._metrics = self._calculate_metrics()
@@ -113,7 +117,15 @@ class Analyzer:
 
         # Volatility (annualized)
         # For 1-minute bars: 252 trading days * 390 minutes per day
-        periods_per_year = 252 * 390
+        # Measured from the sessions actually present, not assumed. The old
+        # hardcoded 252 * 390 is within 0.5% for regular hours (measured 251.7
+        # sessions/year x 390) but understates by ~2.4x once extended hours are
+        # included, which mis-scales annualised volatility by sqrt(2.4) ~ 1.56
+        # and every Sharpe with it.
+        if self.calendar is not None:
+            periods_per_year = self.calendar.periods_per_year(self.regular_hours_only)
+        else:
+            periods_per_year = 252 * 390
         volatility_annual = np.std(returns) * np.sqrt(periods_per_year) if len(returns) > 0 else 0.0
 
         # Sharpe Ratio (assuming 0% risk-free rate)

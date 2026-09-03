@@ -95,6 +95,23 @@ def require_splits_csv() -> Path:
 
 
 # ============================================================================
+# Market Data Scope
+# ============================================================================
+# Restrict backtests to regular trading hours, 09:30-16:00 ET (ADR-020).
+#
+# Default on. The two regimes differ in data quality, not just hours: regular
+# session bars are dense (measured 390 of 390 minutes on 475 of 479 sessions),
+# while extended and overnight bars are sparse -- on one sample day AAPL had
+# 797 bars and a thin name had 15. TimeAlignedIterator forward-fills across
+# gaps, and that fill has not been validated, so including extended hours
+# compounds an unvalidated fill with the data most likely to stress it.
+#
+# A switch rather than a deletion: extended-hours behaviour is a legitimate
+# research target and the bars are already in the database. Turning it off
+# changes results, so it is part of the run_id hash.
+REGULAR_HOURS_ONLY = os.getenv("WISETRADE_REGULAR_HOURS_ONLY", "1").lower() not in ("0", "false", "no")
+
+# ============================================================================
 # Parallelism
 # ============================================================================
 # Start method for batch worker processes: "spawn" or "fork" (ADR-015, OPEN).

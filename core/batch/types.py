@@ -29,6 +29,7 @@ class BatchTask:
     start_datetime: int                     # Unix millis UTC
     end_datetime: int                       # Unix millis UTC
     portfolio_config: dict[str, Any]
+    regular_hours_only: bool                # ADR-020; part of the hash, it changes results
     batch_dir: str                          # absolute path; resolved in BatchConfig.run()
     save_curves: bool = True
 
@@ -66,6 +67,7 @@ def compute_run_id(
     start_datetime: int,
     end_datetime: int,
     portfolio_config: dict[str, Any],
+    regular_hours_only: bool,
 ) -> str:
     """
     Deterministic 16-char hex hash of the task's identifying fields.
@@ -90,6 +92,11 @@ def compute_run_id(
         "start_datetime": start_datetime,
         "end_datetime": end_datetime,
         "portfolio_config": _canonicalize(portfolio_config),
+        # ADR-020: filtering to regular hours changes which bars exist, so two
+        # batches differing only in this flag are different runs. Third input
+        # found outside the hash (after portfolio_config, ADR-013) -- see
+        # ADR-022 on the pattern.
+        "regular_hours_only": bool(regular_hours_only),
     }
     serialized = json.dumps(payload, sort_keys=True, default=str)
     digest = hashlib.sha256(serialized.encode()).hexdigest()

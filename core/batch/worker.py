@@ -64,6 +64,7 @@ def run_one(task: BatchTask) -> RunResult:
             end_datetime=task.end_datetime,
             strategy_params=task.params,
             portfolio_config=task.portfolio_config,
+            regular_hours_only=task.regular_hours_only,
         )
         analyzer = engine.run()
 

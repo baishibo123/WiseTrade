@@ -25,6 +25,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
 from config import SQLITE_DB_PATH, require_splits_csv          # noqa: E402
 from database.adjustments import build_adj_factors, validate_adjustments  # noqa: E402
+from database.sessions import derive_sessions  # noqa: E402
 from database.sqlite_db import SQLiteDatabase                   # noqa: E402
 from utils.load_splits_to_db import load_splits_csv_to_db       # noqa: E402
 
@@ -50,7 +51,10 @@ def main() -> int:
     conn = sqlite3.connect(args.db)
     build_adj_factors(conn)
 
-    print("\n[4/4] Validating")
+    print("\n[4/5] Deriving trading sessions")
+    derive_sessions(conn)
+
+    print("\n[5/5] Validating")
     problems = validate_adjustments(conn)
     conn.close()
     if problems:

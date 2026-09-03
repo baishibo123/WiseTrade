@@ -37,11 +37,9 @@ class SMA_OS_Dynamic(Strategy):
         self.fast_period = self.params.get('fast_period', 10)
         self.slow_period = self.params.get('slow_period', 20)
 
-        # Market close time (UTC)
-        # US Market Close (4:00 PM ET):
-        # - 20:00 UTC (Daylight Saving Time / Summer)
-        # - 21:00 UTC (Standard Time / Winter)
-        self.market_close_hour_utc = self.params.get('market_close_hour_utc', 21)
+        # No market_close_hour_utc parameter any more: the close is a property
+        # of the session, not a constant. self.calendar (injected by Engine)
+        # knows the real close, including early closes, and is DST-correct.
 
         # Fraction of the window spent observing before the strategy will
         # accept anything. 0.37 is 1/e, the classical secretary-problem
@@ -165,28 +163,13 @@ class SMA_OS_Dynamic(Strategy):
         Returns:
             Minutes until market close (0 if already past close)
         """
-        # Convert to seconds and create datetime object
-        timestamp_sec = timestamp_ms / 1000.0
-        dt_current = datetime.fromtimestamp(timestamp_sec, tz=timezone.utc)
-
-        # Create market close time for current day
-        try:
-            dt_close = dt_current.replace(
-                hour=self.market_close_hour_utc,
-                minute=0,
-                second=0,
-                microsecond=0
-            )
-        except ValueError:
-            # Fallback if invalid hour
+        if self.calendar is None:
+            # No sessions derived; fall back to "plenty of time left" rather
+            # than inventing a close. Loud enough to notice in a backtest that
+            # never exits on the time criterion.
             return 60
-
-        # Calculate time difference
-        delta = dt_close - dt_current
-        minutes = int(delta.total_seconds() / 60)
-
-        # Return 0 if past close time
-        return max(0, minutes)
+        remaining = self.calendar.minutes_to_close(timestamp_ms)
+        return 60 if remaining is None else remaining
 
     def _reset_state(self, symbol: str):
         """Reset tracking state for a symbol"""

@@ -54,7 +54,8 @@ class Engine:
             end_datetime: int,
             strategy_params: Optional[Dict[str, Any]] = None,
             portfolio_config: Optional[Dict[str, Any]] = None,
-            feed_class: Type[BaseFeed] = DatabaseFeed  # ← Changed default handling
+            feed_class: Type[BaseFeed] = DatabaseFeed,  # ← Changed default handling
+            regular_hours_only: Optional[bool] = None
     ):
         """
         Initialize backtesting engine
@@ -78,6 +79,11 @@ class Engine:
         self.start_datetime = start_datetime
         self.end_datetime = end_datetime
         self.strategy_params = strategy_params or {}
+
+        if regular_hours_only is None:
+            from config import REGULAR_HOURS_ONLY
+            regular_hours_only = REGULAR_HOURS_ONLY
+        self.regular_hours_only = regular_hours_only
         if feed_class is None:
             feed_class = DatabaseFeed
 
@@ -175,7 +181,9 @@ class Engine:
             portfolio=portfolio,
             universe=self.universe,
             strategy_name=strategy.name,
-            bar_count=bar_count
+            bar_count=bar_count,
+            calendar=getattr(strategy, "calendar", None),
+            regular_hours_only=self.regular_hours_only
         )
 
         logging.info(
@@ -199,7 +207,8 @@ class Engine:
                 feed = self.feed_class(
                     symbol=symbol,
                     start_datetime=self.start_datetime,
-                    end_datetime=self.end_datetime
+                    end_datetime=self.end_datetime,
+                    regular_hours_only=self.regular_hours_only
                 )
                 self.feeds[symbol] = feed
             except Exception as e:
@@ -208,10 +217,34 @@ class Engine:
 
     def _create_strategy(self) -> Strategy:
         """Create and configure strategy instance"""
-        return self.strategy_class(
+        strategy = self.strategy_class(
             universe=self.universe,
             params=self.strategy_params
         )
+        # Injected like self.portfolio, so Strategy.next()'s signature does not
+        # change and existing strategies are untouched. A strategy that needs
+        # session structure asks the calendar instead of doing timezone
+        # arithmetic on a raw timestamp (ADR-019).
+        strategy.calendar = self._load_calendar()
+        return strategy
+
+    def _load_calendar(self):
+        """TradingCalendar for this run, or None if sessions were never derived."""
+        try:
+            import sqlite3
+            from config import DATABASE_CONFIG
+            from database.sessions import TradingCalendar
+            if DATABASE_CONFIG.get("type") != "sqlite":
+                return None
+            conn = sqlite3.connect(f"file:{DATABASE_CONFIG['path']}?mode=ro", uri=True)
+            try:
+                cal = TradingCalendar.load(conn)
+            finally:
+                conn.close()
+            return cal if len(cal) else None
+        except Exception as e:
+            logging.warning(f"TradingCalendar unavailable ({e}); time-derived values fall back to defaults")
+            return None
 
     def _create_portfolio(self) -> Portfolio:
         """Create and configure portfolio instance"""

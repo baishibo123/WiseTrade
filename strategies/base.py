@@ -73,6 +73,10 @@ class Strategy(ABC):
         self.universe = universe
         self.params = params or {}
         self.portfolio = None  # Will be injected by Engine
+        # TradingCalendar, injected by Engine. The single source for every
+        # time-derived value: session bounds, minutes to close, bars per year.
+        # Never do timezone arithmetic on a bar timestamp directly (ADR-019).
+        self.calendar = None
 
         # Per-symbol bar history
         self._lookback = self.params.get('max_lookback', DEFAULT_MAX_LOOKBACK)

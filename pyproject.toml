@@ -28,6 +28,11 @@ dependencies = [
     # progress bars; also the write path that lets logs and the batch progress
     # bar share stderr without tearing (core/batch/orchestrator.py)
     "tqdm>=4.66",
+    # Authoritative exchange session hours. The session *set* is derived from
+    # the bar data (ADR-019); this resolves the intraday boundary, which the
+    # data cannot -- extended-hours trade prints after an early close, so a
+    # purely data-derived half-day close lands 1-2 minutes late.
+    "exchange_calendars>=4.5",
 ]
 
 [project.optional-dependencies]
