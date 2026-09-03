@@ -287,3 +287,21 @@ Three instances, all found by the same reasoning:
 
 **Revisit when:** the RTH switch is implemented — instance 2 must be resolved alongside it — or a stale-data reuse actually occurs.
 
+---
+
+## ADR-023: Session derivation splits data-truth from package-truth at the intraday boundary (refines ADR-019 and ADR-020)
+
+**Decided:** Which dates are trading sessions is derived from the bar data. The *intraday* regular-hours boundary is taken from `exchange_calendars` when it is installed, with a bar-density fallback when it is not. `exchange_calendars` becomes a declared dependency. Neither ADR-019 nor ADR-020 is overturned; this records what implementation established about both.
+
+**Alternatives:** Derive the intraday boundary from bar density alone, which is what ADR-019 assumed; take the entire session set from the package, which ADR-019 rejected and still rejects.
+
+**Why the session set is still data-derived, but ADR-019's test was wrong.** ADR-019 justified itself with "no bars on a date means the market was closed." That does not hold for this vendor. Files are bucketed by *UTC* date, so a session's post-20:00-ET tail lands in the next day's folder — which is why the raw tree contains Saturday folders holding Friday evening. The correction is narrower than a reversal: converting to exchange-local time makes the artifact vanish completely. Measured on the real database, 453,567 distinct timestamps collapse to **479 ET sessions**, every one starting 04:01 ET, with no weekend dates at all and 2.0% of timestamps changing date under the conversion. So the session set *is* reliably data-derived — but only after that conversion, which is why it now happens exactly once in `derive_sessions` and nothing downstream re-derives a session from a raw timestamp.
+
+**Why the intraday boundary is the exception.** It is the one thing the data genuinely cannot resolve: extended-hours trade still prints after an early close, so deriving the regular close from bar density placed the four half-days in the window (2024-07-03, 2024-11-29, 2024-12-24, 2025-07-03) at 13:01–13:02 instead of 13:00. The package places them at exactly 13:00 with exactly 210 bars, and agrees with the derived data on every other session. That is a narrow and well-defined role — resolving a boundary the data blurs — without becoming the source of the session set, so the reasoning in ADR-019 about package staleness still stands for everything else. The density fallback is retained so a machine without the package still builds a correct database, accurate to a minute or two on early closes.
+
+**Boundaries are half-open because bars are stamped `eob`.** The bar labelled 09:31 covers 09:30–09:31, so regular hours are `(09:30, 16:00]` — exactly 390 bars, confirmed on 475 of 479 sessions. Treating the interval as closed at both ends picks up a pre-open bar and drops the closing one.
+
+**Two measured corrections to ADR-020.** First, the filter removes **20% of bars, not the ~59% implied**: regular hours are 41% of the distinct *time axis* but 80% of the *rows*, because extended-hours coverage is sparse — only liquid names trade then, so those minutes contribute few bars. Second, the annualisation defect is confirmed and quantified: `252 * 390` is within 0.5% of the measured 97,798 bars/year for regular hours, but understates the extended-hours figure of 238,747 by **2.44x**, mis-scaling annualised volatility by sqrt(2.44) ≈ 1.56 and every Sharpe with it. Because that error only becomes visible once the filter is switched off, the switch and the measured `periods_per_year` had to ship in the same change — which is what ADR-020 meant by treating them as one decision.
+
+**Consequence already recorded elsewhere:** the regular-hours flag is a result-affecting input and is now part of `run_id`. It is the third such input found outside the hash, after portfolio config (ADR-013) and the bar data itself (ADR-022, still open).
+
