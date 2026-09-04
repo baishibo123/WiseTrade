@@ -183,7 +183,9 @@ class Engine:
             strategy_name=strategy.name,
             bar_count=bar_count,
             calendar=getattr(strategy, "calendar", None),
-            regular_hours_only=self.regular_hours_only
+            regular_hours_only=self.regular_hours_only,
+            start_datetime=self.start_datetime,
+            end_datetime=self.end_datetime
         )
 
         logging.info(

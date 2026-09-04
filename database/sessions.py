@@ -319,6 +319,28 @@ class TradingCalendar:
         s = self._sessions[i]
         return s if ts_ms <= s.contains_to else None
 
+    def sessions_in_range(self, lo_ms: int, hi_ms: int,
+                          regular_hours_only: bool = False) -> list:
+        """
+        Sessions overlapping [lo_ms, hi_ms]. The denominator for coverage.
+
+        The overlap must be tested against the same window the feed reads, or
+        the count is wrong at the edges. A range starting 2025-07-02 00:00 UTC
+        begins at 20:00 ET on 07-01, so the 07-01 session's *extended* tail
+        overlaps it -- but with the regular-hours filter on, none of that
+        session's bars are returned, and counting it made every symbol look
+        like it was missing a day.
+        """
+        out = []
+        for s in self._sessions:
+            if regular_hours_only:
+                lo_s, hi_s = s.rth_open_ms, s.rth_close_ms
+            else:
+                lo_s, hi_s = s.contains_from, s.contains_to
+            if hi_s >= lo_ms and lo_s <= hi_ms:
+                out.append(s)
+        return out
+
     def is_regular_hours(self, ts_ms: int) -> bool:
         s = self.session_for(ts_ms)
         return bool(s) and s.rth_open_ms < ts_ms <= s.rth_close_ms

@@ -41,7 +41,9 @@ class Analyzer:
             strategy_name: str = "Unknown",
             bar_count: int = 0,
             calendar=None,
-            regular_hours_only: bool = True
+            regular_hours_only: bool = True,
+            start_datetime: Optional[int] = None,
+            end_datetime: Optional[int] = None
     ):
         """
         Initialize analyzer
@@ -58,6 +60,8 @@ class Analyzer:
         self.bar_count = bar_count
         self.calendar = calendar
         self.regular_hours_only = regular_hours_only
+        self.start_datetime = start_datetime
+        self.end_datetime = end_datetime
 
         # Calculate all metrics
         self._metrics = self._calculate_metrics()
@@ -215,10 +219,51 @@ class Analyzer:
             "final_cash": round(final_cash, 2),
             "cash_utilization_pct": round(cash_utilization_pct, 2),
 
+            # Data coverage — see _session_coverage()
+            **self._session_coverage(timestamps),
+
             # Meta
             "years": round(years, 3),
             "bar_count": self.bar_count,
             "duration_days": round(duration_days, 1)
+        }
+
+    def _session_coverage(self, timestamps) -> dict:
+        """
+        How many trading sessions this run actually saw, against how many the
+        calendar says were scheduled.
+
+        A vendor can silently omit a symbol-day: GOOG 2025-09-24 arrived as a
+        zero-byte CSV, the only one in 2.5M files. Nothing downstream breaks --
+        the feed returns one session fewer and the backtest completes normally
+        -- so without this the affected row in a ranking table is
+        indistinguishable from every other row. GOOG placed third on return
+        with 478 of 479 sessions and nothing said so.
+
+        Cheap: the sessions table is a few hundred rows and the timestamps are
+        already in hand, so this is a bisect per equity point and no SQL at all.
+        Deliberately NOT a query against bars_rth -- scanning that view
+        full-table is a range join over every bar and takes tens of minutes.
+        """
+        if self.calendar is None or len(timestamps) == 0:
+            return {}
+
+        lo = self.start_datetime if self.start_datetime is not None else int(timestamps[0])
+        hi = self.end_datetime if self.end_datetime is not None else int(timestamps[-1])
+        expected = len(self.calendar.sessions_in_range(lo, hi, self.regular_hours_only))
+        if not expected:
+            return {}
+
+        seen = set()
+        for t in timestamps:
+            s = self.calendar.session_for(int(t))
+            if s is not None:
+                seen.add(s.et_date)
+
+        return {
+            "sessions_expected": expected,
+            "sessions_present": len(seen),
+            "session_coverage_pct": round(100.0 * len(seen) / expected, 3),
         }
 
     def _empty_metrics(self) -> Dict[str, Any]:
