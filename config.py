@@ -111,6 +111,15 @@ def require_splits_csv() -> Path:
 # changes results, so it is part of the run_id hash.
 REGULAR_HOURS_ONLY = os.getenv("WISETRADE_REGULAR_HOURS_ONLY", "1").lower() not in ("0", "false", "no")
 
+# Which exchange calendar bounds a trading session (database/sessions.py).
+#
+# XNYS while the vendor's own `exchange` column reads XNAS. That is safe only
+# because NYSE and Nasdaq keep identical regular hours and holidays for US
+# equities -- it is not safe in general, and the --all ingest brings in ETFs and
+# cross-listings. Configurable so the assumption is visible and changeable
+# rather than compiled in.
+EXCHANGE_CALENDAR = os.getenv("WISETRADE_EXCHANGE_CALENDAR", "XNYS")
+
 # ============================================================================
 # Parallelism
 # ============================================================================

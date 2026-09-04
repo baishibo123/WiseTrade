@@ -117,12 +117,25 @@ class Analyzer:
 
         # Volatility (annualized)
         # For 1-minute bars: 252 trading days * 390 minutes per day
-        # Measured from the sessions actually present, not assumed. The old
-        # hardcoded 252 * 390 is within 0.5% for regular hours (measured 251.7
-        # sessions/year x 390) but understates by ~2.4x once extended hours are
-        # included, which mis-scales annualised volatility by sqrt(2.4) ~ 1.56
-        # and every Sharpe with it.
-        if self.calendar is not None:
+        # Annualise from THIS run's own observations, not from a constant and
+        # not from the calendar's universe-wide average.
+        #
+        # 252 * 390 assumed every bar is a regular-hours bar. The calendar's
+        # average fixes that but is still universe-wide, and per-symbol bar
+        # density varies enormously once extended hours are included -- measured
+        # across TECH_100, BKNG trades 154 bars/session against NVDA's 918 while
+        # the average is 948. Annualising BKNG with 948 overstates its
+        # volatility by sqrt(948/154) ~ 2.5x and understates its Sharpe by the
+        # same factor, and because the error differs per symbol it reorders the
+        # very ranking a per-symbol batch exists to produce.
+        #
+        # len(returns)/years is exactly the observed frequency for this run, so
+        # it is right for a thin symbol and a liquid one alike, with or without
+        # the regular-hours filter. The calendar is kept only as a fallback for
+        # a run too short to estimate from.
+        if len(returns) > 1 and years > 0:
+            periods_per_year = len(returns) / years
+        elif self.calendar is not None:
             periods_per_year = self.calendar.periods_per_year(self.regular_hours_only)
         else:
             periods_per_year = 252 * 390

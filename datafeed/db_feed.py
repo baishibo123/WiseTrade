@@ -130,6 +130,20 @@ class DatabaseFeed(BaseFeed):
         # on top of the adjusted view (database/sessions.py), so it is never
         # possible to get RTH-filtered *unadjusted* bars.
         source = "bars_rth" if self.regular_hours_only else "bars_adjusted"
+
+        if self.regular_hours_only:
+            # bars_rth INNER JOINs sessions, so an EMPTY sessions table yields
+            # zero rows rather than an error -- and since regular_hours_only is
+            # the default, every backtest would report status=ok with no trades
+            # and 0.00% return, with nothing naming the cause. A *missing* table
+            # already fails loudly; this makes the empty case fail the same way.
+            n_sessions = self.cursor.execute("SELECT COUNT(*) FROM sessions").fetchone()[0]
+            if not n_sessions:
+                raise RuntimeError(
+                    f"{db_path}: the sessions table is empty, so the regular-hours view "
+                    "bars_rth matches nothing. Run utils/build_database.py to derive "
+                    "sessions, or pass regular_hours_only=False to read all hours."
+                )
         self.cursor.execute(f"""
             SELECT symbol, datetime, open, high, low, close, volume
             FROM {source}
