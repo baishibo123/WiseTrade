@@ -4,6 +4,7 @@ Calculates metrics, generates reports, and exports results
 """
 
 from typing import Dict, List, Tuple, Optional, Any
+import math
 import numpy as np
 import logging
 from datetime import datetime, timezone
@@ -12,7 +13,20 @@ from core.portfolio import Portfolio
 from core.episodes import build_episodes, episode_stats
 
 
+def _round_or_none(x, n):
+    """round() that passes None through: an undefined metric stays undefined."""
+    return None if x is None else round(x, n)
+
+
+def _fmt(x, nd=2):
+    """Display an optionally-undefined metric without crashing the formatter."""
+    return "n/a" if x is None else f"{x:,.{nd}f}"
+
+
 class Analyzer:
+    # Below one calendar day, annualising extrapolates by more than 365x.
+    MIN_YEARS_FOR_CAGR = 1.0 / 365.25
+
     """
     Performance analyzer for backtest results
 
@@ -106,11 +120,30 @@ class Analyzer:
         duration_days = duration_ms / (1000 * 60 * 60 * 24)
         years = duration_days / 365.25
 
-        # CAGR (Compound Annual Growth Rate)
-        if years > 0 and final > 0 and initial > 0:
-            cagr_pct = (((final / initial) ** (1 / years)) - 1) * 100
-        else:
-            cagr_pct = 0.0
+        # CAGR (Compound Annual Growth Rate), or None when the window is too
+        # short to annualise.
+        #
+        # (final/initial) ** (1/years) overflowed to inf for very short runs:
+        # a two-bar equity history gives years ~ 1.9e-6, so the exponent is
+        # ~525,600 and the result is inf with only a RuntimeWarning. sharpe is
+        # derived from cagr, so it became inf too -- and inf sorts to the top of
+        # a ranking, putting a degenerate one-minute run above every real result.
+        #
+        # Two guards, because they fail for different reasons. The floor is a
+        # judgement: annualising extrapolates by 1/years, and below one calendar
+        # day that is an extrapolation of more than 365x, which is not a number
+        # anyone should act on. The log-space check is arithmetic: math.exp
+        # overflows above ~709.78 regardless of the floor.
+        #
+        # None, not 0.0. The old else-branch returned 0.0, which reads as "this
+        # strategy did not grow" when the truth is "this window cannot answer
+        # that" -- and 0.0 sorts to the middle of a ranking as though it were a
+        # real measurement.
+        cagr_pct = None
+        if years >= self.MIN_YEARS_FOR_CAGR and final > 0 and initial > 0:
+            log_growth = math.log(final / initial) / years
+            if log_growth < 700.0:
+                cagr_pct = (math.exp(log_growth) - 1.0) * 100.0
 
         # ================================================================
         # Risk Metrics
@@ -146,10 +179,12 @@ class Analyzer:
         volatility_annual = np.std(returns) * np.sqrt(periods_per_year) if len(returns) > 0 else 0.0
 
         # Sharpe Ratio (assuming 0% risk-free rate)
-        if volatility_annual > 0:
+        # Undefined whenever CAGR is: sharpe is annualised return over
+        # annualised volatility, so it inherits the numerator's status.
+        if volatility_annual > 0 and cagr_pct is not None:
             sharpe = (cagr_pct / 100) / volatility_annual
         else:
-            sharpe = 0.0
+            sharpe = 0.0 if cagr_pct is not None else None
 
         # Maximum Drawdown
         peak = np.maximum.accumulate(equity_values)
@@ -157,10 +192,10 @@ class Analyzer:
         max_drawdown_pct = abs(np.min(drawdown)) * 100 if len(drawdown) > 0 else 0.0
 
         # Calmar Ratio (CAGR / Max Drawdown)
-        if max_drawdown_pct > 0:
+        if max_drawdown_pct > 0 and cagr_pct is not None:
             calmar = cagr_pct / max_drawdown_pct
         else:
-            calmar = 0.0
+            calmar = 0.0 if cagr_pct is not None else None
 
         # ================================================================
         # Trade Statistics — episode-based (see core/episodes.py)
@@ -195,15 +230,15 @@ class Analyzer:
 
             # Return Metrics
             "total_return_pct": round(total_return_pct, 3),
-            "cagr_pct": round(cagr_pct, 3),
+            "cagr_pct": _round_or_none(cagr_pct, 3),
             "total_equity": round(final, 2),
             "initial_equity": round(initial, 2),
 
             # Risk Metrics
-            "sharpe": round(sharpe, 3),
+            "sharpe": _round_or_none(sharpe, 3),
             "volatility_annualized_pct": round(volatility_annual * 100, 3),
             "max_drawdown_pct": round(max_drawdown_pct, 3),
-            "calmar": round(calmar, 3),
+            "calmar": _round_or_none(calmar, 3),
 
             # Trade Statistics — DIAGNOSTICS, not ground truth.
             # Everything above this line derives from the mark-to-market equity
@@ -334,13 +369,13 @@ class Analyzer:
         print(f"Initial Equity:    ${m['initial_equity']:>12,.2f}")
         print(f"Final Equity:      ${m['total_equity']:>12,.2f}")
         print(f"Total Return:      {m['total_return_pct']:>12,.2f}%")
-        print(f"CAGR:              {m['cagr_pct']:>12,.2f}%")
+        print(f"CAGR:              {_fmt(m['cagr_pct']):>13}%")
 
         print("\n--- RISK METRICS ---")
-        print(f"Sharpe Ratio:      {m['sharpe']:>12,.2f}")
+        print(f"Sharpe Ratio:      {_fmt(m['sharpe']):>13}")
         print(f"Max Drawdown:      {m['max_drawdown_pct']:>12,.2f}%")
         print(f"Volatility (Ann):  {m['volatility_annualized_pct']:>12,.2f}%")
-        print(f"Calmar Ratio:      {m['calmar']:>12,.2f}")
+        print(f"Calmar Ratio:      {_fmt(m['calmar']):>13}")
 
         print("\n--- TRADE DIAGNOSTICS (episode-based) ---")
         print(f"Episodes (closed): {m['num_episodes']:>12,}")

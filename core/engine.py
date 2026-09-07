@@ -192,7 +192,7 @@ class Engine:
             f"Backtest complete | "
             f"Final equity: ${analyzer.metrics['total_equity']:,.0f} | "
             f"Return: {analyzer.metrics['total_return_pct']:.2f}% | "
-            f"Sharpe: {analyzer.metrics['sharpe']:.2f} | "
+            f"Sharpe: {analyzer.metrics['sharpe'] if analyzer.metrics['sharpe'] is not None else 'n/a'} | "
             f"Total bars: {bar_count:,}"
         )
 
@@ -319,7 +319,7 @@ class Engine:
                     iterator.set_postfix({
                         "strategy": strategy_class.__name__,
                         "return": f"{analyzer.metrics['total_return_pct']:+.1f}%",
-                        "sharpe": f"{analyzer.metrics['sharpe']:.2f}"
+                        "sharpe": str(analyzer.metrics['sharpe'])
                     })
 
             except Exception as e:
