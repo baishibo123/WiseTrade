@@ -55,7 +55,8 @@ class Engine:
             strategy_params: Optional[Dict[str, Any]] = None,
             portfolio_config: Optional[Dict[str, Any]] = None,
             feed_class: Type[BaseFeed] = DatabaseFeed,  # ← Changed default handling
-            regular_hours_only: Optional[bool] = None
+            regular_hours_only: Optional[bool] = None,
+            recorder=None
     ):
         """
         Initialize backtesting engine
@@ -84,6 +85,10 @@ class Engine:
             from config import REGULAR_HOURS_ONLY
             regular_hours_only = REGULAR_HOURS_ONLY
         self.regular_hours_only = regular_hours_only
+
+        # Optional live sink for portfolio state (ADR-016). None means
+        # NullRecorder, so the default path is unchanged.
+        self.recorder = recorder
         if feed_class is None:
             feed_class = DatabaseFeed
 
@@ -176,7 +181,12 @@ class Engine:
             portfolio.process_signals(final_signals, last_bars)
             portfolio.update(last_bars, last_timestamp)
 
-        # 8. Create analyzer
+        # 8. Close the recorder before analysis, so a streaming sink has
+        #    committed everything it holds by the time metrics are read.
+        if self.recorder is not None:
+            self.recorder.close()
+
+        # 9. Create analyzer
         analyzer = Analyzer(
             portfolio=portfolio,
             universe=self.universe,
@@ -251,6 +261,7 @@ class Engine:
     def _create_portfolio(self) -> Portfolio:
         """Create and configure portfolio instance"""
         return Portfolio(
+            recorder=self.recorder,
             initial_cash=self.initial_cash,
             max_positions=self.max_positions,
             min_trade_size=self.min_trade_size,

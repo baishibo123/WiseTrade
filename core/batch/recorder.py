@@ -9,21 +9,13 @@ per-stock curves are added and memory pressure becomes real.
 from __future__ import annotations
 
 import os
-from abc import ABC, abstractmethod
 from pathlib import Path
 from typing import Iterable, Sequence
 
+from core.recorder import CurveRecorder
+
 
 EQUITY_COLUMNS = ["timestamp", "equity", "cash", "positions_value", "num_positions"]
-
-
-class CurveRecorder(ABC):
-    """Stores time-series curve data for one run. Atomic on commit (ADR-006)."""
-
-    @abstractmethod
-    def write_equity_history(self, history: Sequence[tuple]) -> Path:
-        """Persist the full equity history. Returns the final committed path."""
-        ...
 
 
 class ParquetEquityRecorder(CurveRecorder):
@@ -36,6 +28,16 @@ class ParquetEquityRecorder(CurveRecorder):
 
     def __init__(self, output_path: Path):
         self.output_path = Path(output_path)
+
+    def on_equity_point(self, point, *, revises_previous: bool) -> None:
+        """
+        No-op: this recorder commits once at the end via write_equity_history.
+
+        Parquet cannot serve the streaming path anyway -- ADR-007 chose it
+        because the footer is written only on close, which makes a partial file
+        detectably invalid and is exactly backwards for tailing. A live sink is
+        a different implementation (JSONL tail, socket), not a subclass of this.
+        """
 
     def write_equity_history(self, history: Iterable[tuple]) -> Path:
         import pandas as pd  # local import: pandas is heavy, only needed in worker

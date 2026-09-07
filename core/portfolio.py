@@ -3,6 +3,8 @@ from typing import List, Dict, Any, Optional, Tuple
 from datetime import datetime
 import logging
 
+from core.recorder import CurveRecorder, NullRecorder
+
 from database.schema import Bar
 
 from dataclasses import dataclass
@@ -45,7 +47,8 @@ class Portfolio:
             max_positions: int = 10,
             min_trade_size: float = 0.1,
             min_trade_size_per_symbol: Optional[Dict[str, float]] = None,
-            max_position_pct: float = 0.3
+            max_position_pct: float = 0.3,
+            recorder: CurveRecorder = None
     ):
         """
         Initialize portfolio
@@ -71,6 +74,7 @@ class Portfolio:
 
         # History tracking
         self._equity_history: List[Tuple[int, float, float, float, int]] = []
+        self._recorder: CurveRecorder = recorder or NullRecorder()
         self._trades: List[Dict[str, Any]] = []
 
         logging.info(
@@ -500,10 +504,18 @@ class Portfolio:
         # replaces the earlier row rather than appending beside it. Otherwise the
         # curve stops being uniquely indexed by time and any set_index/join/
         # resample on the Parquet output silently misbehaves.
-        if self._equity_history and self._equity_history[-1][0] == current_timestamp:
+        revises = bool(self._equity_history) and self._equity_history[-1][0] == current_timestamp
+        if revises:
             self._equity_history[-1] = point
         else:
             self._equity_history.append(point)
+
+        # The recorder hook (ADR-016). This is the moment an equity point is
+        # final, which is why the hook is here and not in Engine's loop: only
+        # this method knows whether the point is new or supersedes the previous
+        # one. Default NullRecorder, so the call is unconditional and costs a
+        # no-op method call per tick.
+        self._recorder.on_equity_point(point, revises_previous=revises)
 
     # ========================================================================
     # Properties

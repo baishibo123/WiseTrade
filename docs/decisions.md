@@ -177,7 +177,7 @@ One paragraph per decision: **what** was decided, **alternatives** considered, *
 
 ## ADR-016 · OPEN: Live and streaming curve recording
 
-**Status:** OPEN — nothing streaming is implemented or scheduled. The interface gate described below is the agreed next implementation step but is **not yet in place**; today the worker still reads `analyzer.portfolio._equity_history` directly.
+**Status:** OPEN — nothing streaming is implemented or scheduled. **The interface gate described below is now in place** (`core/recorder.py`): `Portfolio.update()` calls `recorder.on_equity_point(point, revises_previous=…)` at the instant a point is final, defaulting to `NullRecorder` so behaviour is unchanged. What remains open is every implementation, and the harder question of what to display.
 
 **Provisional:** Keep the full equity history in memory exactly as now, and keep the end-of-run Parquet write as the durable artifact. Add no streaming implementation. Preserve the option by making the recorder be invoked from *inside* the event loop rather than after it — that call site, not the abstract base class, is the part that cannot be retrofitted cheaply.
 
