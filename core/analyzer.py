@@ -4,14 +4,29 @@ Calculates metrics, generates reports, and exports results
 """
 
 from typing import Dict, List, Tuple, Optional, Any
+import math
 import numpy as np
 import logging
-from datetime import datetime
+from datetime import datetime, timezone
 
 from core.portfolio import Portfolio
+from core.episodes import build_episodes, episode_stats
+
+
+def _round_or_none(x, n):
+    """round() that passes None through: an undefined metric stays undefined."""
+    return None if x is None else round(x, n)
+
+
+def _fmt(x, nd=2):
+    """Display an optionally-undefined metric without crashing the formatter."""
+    return "n/a" if x is None else f"{x:,.{nd}f}"
 
 
 class Analyzer:
+    # Below one calendar day, annualising extrapolates by more than 365x.
+    MIN_YEARS_FOR_CAGR = 1.0 / 365.25
+
     """
     Performance analyzer for backtest results
 
@@ -38,7 +53,11 @@ class Analyzer:
             portfolio: Portfolio,
             universe: List[str],
             strategy_name: str = "Unknown",
-            bar_count: int = 0
+            bar_count: int = 0,
+            calendar=None,
+            regular_hours_only: bool = True,
+            start_datetime: Optional[int] = None,
+            end_datetime: Optional[int] = None
     ):
         """
         Initialize analyzer
@@ -53,6 +72,10 @@ class Analyzer:
         self.universe = universe
         self.strategy_name = strategy_name
         self.bar_count = bar_count
+        self.calendar = calendar
+        self.regular_hours_only = regular_hours_only
+        self.start_datetime = start_datetime
+        self.end_datetime = end_datetime
 
         # Calculate all metrics
         self._metrics = self._calculate_metrics()
@@ -97,11 +120,30 @@ class Analyzer:
         duration_days = duration_ms / (1000 * 60 * 60 * 24)
         years = duration_days / 365.25
 
-        # CAGR (Compound Annual Growth Rate)
-        if years > 0 and final > 0 and initial > 0:
-            cagr_pct = (((final / initial) ** (1 / years)) - 1) * 100
-        else:
-            cagr_pct = 0.0
+        # CAGR (Compound Annual Growth Rate), or None when the window is too
+        # short to annualise.
+        #
+        # (final/initial) ** (1/years) overflowed to inf for very short runs:
+        # a two-bar equity history gives years ~ 1.9e-6, so the exponent is
+        # ~525,600 and the result is inf with only a RuntimeWarning. sharpe is
+        # derived from cagr, so it became inf too -- and inf sorts to the top of
+        # a ranking, putting a degenerate one-minute run above every real result.
+        #
+        # Two guards, because they fail for different reasons. The floor is a
+        # judgement: annualising extrapolates by 1/years, and below one calendar
+        # day that is an extrapolation of more than 365x, which is not a number
+        # anyone should act on. The log-space check is arithmetic: math.exp
+        # overflows above ~709.78 regardless of the floor.
+        #
+        # None, not 0.0. The old else-branch returned 0.0, which reads as "this
+        # strategy did not grow" when the truth is "this window cannot answer
+        # that" -- and 0.0 sorts to the middle of a ranking as though it were a
+        # real measurement.
+        cagr_pct = None
+        if years >= self.MIN_YEARS_FOR_CAGR and final > 0 and initial > 0:
+            log_growth = math.log(final / initial) / years
+            if log_growth < 700.0:
+                cagr_pct = (math.exp(log_growth) - 1.0) * 100.0
 
         # ================================================================
         # Risk Metrics
@@ -112,14 +154,37 @@ class Analyzer:
 
         # Volatility (annualized)
         # For 1-minute bars: 252 trading days * 390 minutes per day
-        periods_per_year = 252 * 390
+        # Annualise from THIS run's own observations, not from a constant and
+        # not from the calendar's universe-wide average.
+        #
+        # 252 * 390 assumed every bar is a regular-hours bar. The calendar's
+        # average fixes that but is still universe-wide, and per-symbol bar
+        # density varies enormously once extended hours are included -- measured
+        # across TECH_100, BKNG trades 154 bars/session against NVDA's 918 while
+        # the average is 948. Annualising BKNG with 948 overstates its
+        # volatility by sqrt(948/154) ~ 2.5x and understates its Sharpe by the
+        # same factor, and because the error differs per symbol it reorders the
+        # very ranking a per-symbol batch exists to produce.
+        #
+        # len(returns)/years is exactly the observed frequency for this run, so
+        # it is right for a thin symbol and a liquid one alike, with or without
+        # the regular-hours filter. The calendar is kept only as a fallback for
+        # a run too short to estimate from.
+        if len(returns) > 1 and years > 0:
+            periods_per_year = len(returns) / years
+        elif self.calendar is not None:
+            periods_per_year = self.calendar.periods_per_year(self.regular_hours_only)
+        else:
+            periods_per_year = 252 * 390
         volatility_annual = np.std(returns) * np.sqrt(periods_per_year) if len(returns) > 0 else 0.0
 
         # Sharpe Ratio (assuming 0% risk-free rate)
-        if volatility_annual > 0:
+        # Undefined whenever CAGR is: sharpe is annualised return over
+        # annualised volatility, so it inherits the numerator's status.
+        if volatility_annual > 0 and cagr_pct is not None:
             sharpe = (cagr_pct / 100) / volatility_annual
         else:
-            sharpe = 0.0
+            sharpe = 0.0 if cagr_pct is not None else None
 
         # Maximum Drawdown
         peak = np.maximum.accumulate(equity_values)
@@ -127,59 +192,22 @@ class Analyzer:
         max_drawdown_pct = abs(np.min(drawdown)) * 100 if len(drawdown) > 0 else 0.0
 
         # Calmar Ratio (CAGR / Max Drawdown)
-        if max_drawdown_pct > 0:
+        if max_drawdown_pct > 0 and cagr_pct is not None:
             calmar = cagr_pct / max_drawdown_pct
         else:
-            calmar = 0.0
+            calmar = 0.0 if cagr_pct is not None else None
 
         # ================================================================
-        # Trade Statistics
+        # Trade Statistics — episode-based (see core/episodes.py)
         # ================================================================
+        # The unit of account is the position episode (0 -> nonzero -> 0), not
+        # the fill. Fill-level win rates can be moved from 50% to 94% purely by
+        # slicing one exit into many, with identical economics; episodes are
+        # invariant to that by construction. Fill counts survive as the
+        # avg_entry_fills / avg_exit_fills diagnostics.
+        episodes = build_episodes(trades)
+        trade_stats = episode_stats(episodes, last_timestamp=int(timestamps[-1]))
 
-        # Separate buy and sell trades
-        sell_trades = [t for t in trades if t["action"] == "SELL"]
-
-        num_trades = len(sell_trades)
-
-        if num_trades > 0:
-            # Win/Loss analysis
-            winning_trades = [t for t in sell_trades if t.get("pnl", 0) > 0]
-            losing_trades = [t for t in sell_trades if t.get("pnl", 0) < 0]
-
-            num_wins = len(winning_trades)
-            num_losses = len(losing_trades)
-
-            win_rate_pct = (num_wins / num_trades) * 100
-
-            # Profit/Loss statistics
-            total_wins = sum(t["pnl"] for t in winning_trades)
-            total_losses = abs(sum(t["pnl"] for t in losing_trades))
-
-            profit_factor = total_wins / total_losses if total_losses > 0 else 0.0
-
-            avg_win = total_wins / num_wins if num_wins > 0 else 0.0
-            avg_loss = total_losses / num_losses if num_losses > 0 else 0.0
-
-            largest_win = max([t["pnl"] for t in winning_trades]) if winning_trades else 0.0
-            largest_loss = min([t["pnl"] for t in losing_trades]) if losing_trades else 0.0
-
-            # Average holding period (in bars)
-            # Note: This requires tracking entry times, placeholder for now
-            avg_bars_per_trade = self.bar_count / num_trades if num_trades > 0 else 0
-
-        else:
-            # No trades completed
-            num_wins = 0
-            num_losses = 0
-            win_rate_pct = 0.0
-            profit_factor = 0.0
-            avg_win = 0.0
-            avg_loss = 0.0
-            largest_win = 0.0
-            largest_loss = 0.0
-            avg_bars_per_trade = 0
-
-        # ================================================================
         # Portfolio Statistics
         # ================================================================
 
@@ -202,26 +230,23 @@ class Analyzer:
 
             # Return Metrics
             "total_return_pct": round(total_return_pct, 3),
-            "cagr_pct": round(cagr_pct, 3),
+            "cagr_pct": _round_or_none(cagr_pct, 3),
             "total_equity": round(final, 2),
             "initial_equity": round(initial, 2),
 
             # Risk Metrics
-            "sharpe": round(sharpe, 3),
+            "sharpe": _round_or_none(sharpe, 3),
             "volatility_annualized_pct": round(volatility_annual * 100, 3),
             "max_drawdown_pct": round(max_drawdown_pct, 3),
-            "calmar": round(calmar, 3),
+            "calmar": _round_or_none(calmar, 3),
 
-            # Trade Statistics
-            "num_trades": num_trades,
-            "num_wins": num_wins,
-            "num_losses": num_losses,
-            "win_rate_pct": round(win_rate_pct, 2),
-            "profit_factor": round(profit_factor, 3),
-            "avg_win": round(avg_win, 2),
-            "avg_loss": round(avg_loss, 2),
-            "largest_win": round(largest_win, 2),
-            "largest_loss": round(largest_loss, 2),
+            # Trade Statistics — DIAGNOSTICS, not ground truth.
+            # Everything above this line derives from the mark-to-market equity
+            # curve and is immune to how fills are sliced. Everything below is
+            # trade accounting; prefer the returns metrics when ranking. Keys
+            # are spread in from episode_stats() — see core/episodes.py for
+            # what each of the three win rates means.
+            **trade_stats,
 
             # Portfolio Statistics
             "avg_positions": round(avg_positions, 2),
@@ -229,10 +254,51 @@ class Analyzer:
             "final_cash": round(final_cash, 2),
             "cash_utilization_pct": round(cash_utilization_pct, 2),
 
+            # Data coverage — see _session_coverage()
+            **self._session_coverage(timestamps),
+
             # Meta
             "years": round(years, 3),
             "bar_count": self.bar_count,
             "duration_days": round(duration_days, 1)
+        }
+
+    def _session_coverage(self, timestamps) -> dict:
+        """
+        How many trading sessions this run actually saw, against how many the
+        calendar says were scheduled.
+
+        A vendor can silently omit a symbol-day: GOOG 2025-09-24 arrived as a
+        zero-byte CSV, the only one in 2.5M files. Nothing downstream breaks --
+        the feed returns one session fewer and the backtest completes normally
+        -- so without this the affected row in a ranking table is
+        indistinguishable from every other row. GOOG placed third on return
+        with 478 of 479 sessions and nothing said so.
+
+        Cheap: the sessions table is a few hundred rows and the timestamps are
+        already in hand, so this is a bisect per equity point and no SQL at all.
+        Deliberately NOT a query against bars_rth -- scanning that view
+        full-table is a range join over every bar and takes tens of minutes.
+        """
+        if self.calendar is None or len(timestamps) == 0:
+            return {}
+
+        lo = self.start_datetime if self.start_datetime is not None else int(timestamps[0])
+        hi = self.end_datetime if self.end_datetime is not None else int(timestamps[-1])
+        expected = len(self.calendar.sessions_in_range(lo, hi, self.regular_hours_only))
+        if not expected:
+            return {}
+
+        seen = set()
+        for t in timestamps:
+            s = self.calendar.session_for(int(t))
+            if s is not None:
+                seen.add(s.et_date)
+
+        return {
+            "sessions_expected": expected,
+            "sessions_present": len(seen),
+            "session_coverage_pct": round(100.0 * len(seen) / expected, 3),
         }
 
     def _empty_metrics(self) -> Dict[str, Any]:
@@ -249,15 +315,7 @@ class Analyzer:
             "volatility_annualized_pct": 0.0,
             "max_drawdown_pct": 0.0,
             "calmar": 0.0,
-            "num_trades": 0,
-            "num_wins": 0,
-            "num_losses": 0,
-            "win_rate_pct": 0.0,
-            "profit_factor": 0.0,
-            "avg_win": 0.0,
-            "avg_loss": 0.0,
-            "largest_win": 0.0,
-            "largest_loss": 0.0,
+            **episode_stats([]),
             "avg_positions": 0.0,
             "max_positions_held": 0,
             "final_cash": self.portfolio.initial_cash,
@@ -311,19 +369,23 @@ class Analyzer:
         print(f"Initial Equity:    ${m['initial_equity']:>12,.2f}")
         print(f"Final Equity:      ${m['total_equity']:>12,.2f}")
         print(f"Total Return:      {m['total_return_pct']:>12,.2f}%")
-        print(f"CAGR:              {m['cagr_pct']:>12,.2f}%")
+        print(f"CAGR:              {_fmt(m['cagr_pct']):>13}%")
 
         print("\n--- RISK METRICS ---")
-        print(f"Sharpe Ratio:      {m['sharpe']:>12,.2f}")
+        print(f"Sharpe Ratio:      {_fmt(m['sharpe']):>13}")
         print(f"Max Drawdown:      {m['max_drawdown_pct']:>12,.2f}%")
         print(f"Volatility (Ann):  {m['volatility_annualized_pct']:>12,.2f}%")
-        print(f"Calmar Ratio:      {m['calmar']:>12,.2f}")
+        print(f"Calmar Ratio:      {_fmt(m['calmar']):>13}")
 
-        print("\n--- TRADE STATISTICS ---")
-        print(f"Total Trades:      {m['num_trades']:>12,}")
-        print(f"Winning Trades:    {m['num_wins']:>12,}")
-        print(f"Losing Trades:     {m['num_losses']:>12,}")
-        print(f"Win Rate:          {m['win_rate_pct']:>12,.2f}%")
+        print("\n--- TRADE DIAGNOSTICS (episode-based) ---")
+        print(f"Episodes (closed): {m['num_episodes']:>12,}")
+        print(f"  still open:      {m['num_open_episodes']:>12,}")
+        print(f"Winning / Losing:  {m['num_wins']:>12,} / {m['num_losses']:,}")
+        print(f"Win Rate (count):  {m['win_rate_count_pct']:>12,.2f}%   how often I was right")
+        print(f"Win Rate (notion): {m['win_rate_notional_pct']:>12,.2f}%   share of committed capital that won")
+        print(f"Win Rate (time):   {m['win_rate_time_pct']:>12,.2f}%   share of exposure time that won")
+        print(f"  size skew:       {m['win_rate_size_skew_pct']:>+12,.2f}pp  count-notional; large = small wins, big losses")
+        print(f"Fills per episode: {m['avg_entry_fills']:>12,.2f} in / {m['avg_exit_fills']:,.2f} out")
         print(f"Profit Factor:     {m['profit_factor']:>12,.2f}")
         print(f"Avg Win:           ${m['avg_win']:>12,.2f}")
         print(f"Avg Loss:          ${m['avg_loss']:>12,.2f}")
@@ -376,7 +438,7 @@ class Analyzer:
             writer.writerow(["timestamp", "datetime", "equity", "cash", "positions_value", "num_positions"])
 
             for timestamp, equity, cash, pos_val, num_pos in self.portfolio._equity_history:
-                dt_str = datetime.utcfromtimestamp(timestamp / 1000).strftime("%Y-%m-%d %H:%M:%S")
+                dt_str = datetime.fromtimestamp(timestamp / 1000, tz=timezone.utc).strftime("%Y-%m-%d %H:%M:%S")
                 writer.writerow([timestamp, dt_str, equity, cash, pos_val, num_pos])
 
         logging.info(f"Exported equity curve to {filepath}")

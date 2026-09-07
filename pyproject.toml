@@ -1,0 +1,48 @@
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "wisetrade"
+version = "0.1.0"
+description = "Event-driven backtesting framework for multi-symbol portfolio strategies on 1-minute US equity data"
+readme = "README.md"
+license = { file = "LICENSE" }
+authors = [{ name = "shibo bai" }]
+
+# 3.12 is the target on both machines, not a technical floor -- the code still
+# parses on 3.9. Declared so the two environments cannot silently diverge, and
+# because 3.12 is where datetime.utcnow() starts warning and where forking a
+# multi-threaded process is flagged (ADR-015).
+requires-python = ">=3.12"
+
+dependencies = [
+    # core numerics: metrics in core/analyzer.py, indicators in strategies/
+    "numpy>=1.26",
+    # bar loading (database/sqlite_db.py) and curve writing (core/batch/recorder.py)
+    "pandas>=2.1",
+    # Required but never imported: recorder.py calls df.to_parquet(engine="pyarrow"),
+    # so an import scan does not see it and a missing install fails at run time,
+    # after a backtest has already been computed. ADR-007 depends on it.
+    "pyarrow>=14",
+    # progress bars; also the write path that lets logs and the batch progress
+    # bar share stderr without tearing (core/batch/orchestrator.py)
+    "tqdm>=4.66",
+    # Authoritative exchange session hours. The session *set* is derived from
+    # the bar data (ADR-019); this resolves the intraday boundary, which the
+    # data cannot -- extended-hours trade prints after an early close, so a
+    # purely data-derived half-day close lands 1-2 minutes late.
+    "exchange_calendars>=4.5",
+]
+
+[project.optional-dependencies]
+# Only needed when WISETRADE_DB_TYPE=postgresql. datafeed/db_feed.py imports
+# psycopg2 lazily inside _init_postgresql, so SQLite users never load it.
+# The -binary wheel avoids needing local libpq build tooling.
+postgres = ["psycopg2-binary>=2.9"]
+
+[tool.setuptools]
+py-modules = ["config"]
+
+[tool.setuptools.packages.find]
+include = ["core*", "database*", "datafeed*", "strategies*", "utils*"]

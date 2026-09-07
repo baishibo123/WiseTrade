@@ -8,7 +8,7 @@ Exit: Optimal Stopping with Dynamic Window based on time until market close
 """
 
 from typing import Dict, Optional
-from datetime import datetime
+from datetime import datetime, timezone
 from database.schema import Bar
 from strategies.base import Strategy
 from strategies.indicators import calculate_sma
@@ -23,6 +23,13 @@ class SMA_OS_Dynamic(Strategy):
     Only enters trades if >= 30 minutes remain in trading day
     """
 
+    # Bumped from the inherited 1.0 at the point the batch layer became
+    # usable: prior results were produced against the unadjusted bar
+    # database (config.SQLITE_CONFIG pointed at us_market_1min.sqlite) and
+    # under a run_id scheme that did not hash portfolio config (ADR-013).
+    # Neither is visible to the hash, so the bump is what separates them.
+    VERSION = "1.2"
+
     def __init__(self, universe, params=None):
         super().__init__(universe, params)
 
@@ -30,11 +37,17 @@ class SMA_OS_Dynamic(Strategy):
         self.fast_period = self.params.get('fast_period', 10)
         self.slow_period = self.params.get('slow_period', 20)
 
-        # Market close time (UTC)
-        # US Market Close (4:00 PM ET):
-        # - 20:00 UTC (Daylight Saving Time / Summer)
-        # - 21:00 UTC (Standard Time / Winter)
-        self.market_close_hour_utc = self.params.get('market_close_hour_utc', 21)
+        # No market_close_hour_utc parameter any more: the close is a property
+        # of the session, not a constant. self.calendar (injected by Engine)
+        # knows the real close, including early closes, and is DST-correct.
+
+        # Fraction of the window spent observing before the strategy will
+        # accept anything. 0.37 is 1/e, the classical secretary-problem
+        # threshold -- optimal only under that problem's assumptions (no
+        # recall, unknown distribution, maximise P(picking the single best)).
+        # Intraday price paths satisfy none of those, so the value is a
+        # hypothesis, not a constant. Exposed so it can be swept.
+        self.observation_ratio = self.params.get('observation_ratio', 0.37)
 
         # Minimum minutes required to enter trade
         self.min_minutes_to_trade = self.params.get('min_minutes_to_trade', 30)
@@ -131,7 +144,7 @@ class SMA_OS_Dynamic(Strategy):
 
                         # Set dynamic window parameters
                         state['window_n'] = minutes_remaining
-                        state['observation_idx'] = int(state['window_n'] * 0.37)
+                        state['observation_idx'] = int(state['window_n'] * self.observation_ratio)
                         state['bars_held'] = 0
                         state['max_price_obs'] = bar.close
 
@@ -150,28 +163,13 @@ class SMA_OS_Dynamic(Strategy):
         Returns:
             Minutes until market close (0 if already past close)
         """
-        # Convert to seconds and create datetime object
-        timestamp_sec = timestamp_ms / 1000.0
-        dt_current = datetime.utcfromtimestamp(timestamp_sec)
-
-        # Create market close time for current day
-        try:
-            dt_close = dt_current.replace(
-                hour=self.market_close_hour_utc,
-                minute=0,
-                second=0,
-                microsecond=0
-            )
-        except ValueError:
-            # Fallback if invalid hour
+        if self.calendar is None:
+            # No sessions derived; fall back to "plenty of time left" rather
+            # than inventing a close. Loud enough to notice in a backtest that
+            # never exits on the time criterion.
             return 60
-
-        # Calculate time difference
-        delta = dt_close - dt_current
-        minutes = int(delta.total_seconds() / 60)
-
-        # Return 0 if past close time
-        return max(0, minutes)
+        remaining = self.calendar.minutes_to_close(timestamp_ms)
+        return 60 if remaining is None else remaining
 
     def _reset_state(self, symbol: str):
         """Reset tracking state for a symbol"""

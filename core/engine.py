@@ -5,7 +5,7 @@ Orchestrates data flow, strategy execution, and portfolio management
 
 from typing import Dict, List, Any, Type, Optional
 import logging
-from datetime import datetime
+from datetime import datetime, timezone
 
 from datafeed.db_feed import BaseFeed, DatabaseFeed
 from database.schema import Bar
@@ -54,7 +54,9 @@ class Engine:
             end_datetime: int,
             strategy_params: Optional[Dict[str, Any]] = None,
             portfolio_config: Optional[Dict[str, Any]] = None,
-            feed_class: Type[BaseFeed] = DatabaseFeed  # ← Changed default handling
+            feed_class: Type[BaseFeed] = DatabaseFeed,  # ← Changed default handling
+            regular_hours_only: Optional[bool] = None,
+            recorder=None
     ):
         """
         Initialize backtesting engine
@@ -78,6 +80,15 @@ class Engine:
         self.start_datetime = start_datetime
         self.end_datetime = end_datetime
         self.strategy_params = strategy_params or {}
+
+        if regular_hours_only is None:
+            from config import REGULAR_HOURS_ONLY
+            regular_hours_only = REGULAR_HOURS_ONLY
+        self.regular_hours_only = regular_hours_only
+
+        # Optional live sink for portfolio state (ADR-016). None means
+        # NullRecorder, so the default path is unchanged.
+        self.recorder = recorder
         if feed_class is None:
             feed_class = DatabaseFeed
 
@@ -170,19 +181,28 @@ class Engine:
             portfolio.process_signals(final_signals, last_bars)
             portfolio.update(last_bars, last_timestamp)
 
-        # 8. Create analyzer
+        # 8. Close the recorder before analysis, so a streaming sink has
+        #    committed everything it holds by the time metrics are read.
+        if self.recorder is not None:
+            self.recorder.close()
+
+        # 9. Create analyzer
         analyzer = Analyzer(
             portfolio=portfolio,
             universe=self.universe,
             strategy_name=strategy.name,
-            bar_count=bar_count
+            bar_count=bar_count,
+            calendar=getattr(strategy, "calendar", None),
+            regular_hours_only=self.regular_hours_only,
+            start_datetime=self.start_datetime,
+            end_datetime=self.end_datetime
         )
 
         logging.info(
             f"Backtest complete | "
             f"Final equity: ${analyzer.metrics['total_equity']:,.0f} | "
             f"Return: {analyzer.metrics['total_return_pct']:.2f}% | "
-            f"Sharpe: {analyzer.metrics['sharpe']:.2f} | "
+            f"Sharpe: {analyzer.metrics['sharpe'] if analyzer.metrics['sharpe'] is not None else 'n/a'} | "
             f"Total bars: {bar_count:,}"
         )
 
@@ -199,7 +219,8 @@ class Engine:
                 feed = self.feed_class(
                     symbol=symbol,
                     start_datetime=self.start_datetime,
-                    end_datetime=self.end_datetime
+                    end_datetime=self.end_datetime,
+                    regular_hours_only=self.regular_hours_only
                 )
                 self.feeds[symbol] = feed
             except Exception as e:
@@ -208,14 +229,39 @@ class Engine:
 
     def _create_strategy(self) -> Strategy:
         """Create and configure strategy instance"""
-        return self.strategy_class(
+        strategy = self.strategy_class(
             universe=self.universe,
             params=self.strategy_params
         )
+        # Injected like self.portfolio, so Strategy.next()'s signature does not
+        # change and existing strategies are untouched. A strategy that needs
+        # session structure asks the calendar instead of doing timezone
+        # arithmetic on a raw timestamp (ADR-019).
+        strategy.calendar = self._load_calendar()
+        return strategy
+
+    def _load_calendar(self):
+        """TradingCalendar for this run, or None if sessions were never derived."""
+        try:
+            import sqlite3
+            from config import DATABASE_CONFIG
+            from database.sessions import TradingCalendar
+            if DATABASE_CONFIG.get("type") != "sqlite":
+                return None
+            conn = sqlite3.connect(f"file:{DATABASE_CONFIG['path']}?mode=ro", uri=True)
+            try:
+                cal = TradingCalendar.load(conn)
+            finally:
+                conn.close()
+            return cal if len(cal) else None
+        except Exception as e:
+            logging.warning(f"TradingCalendar unavailable ({e}); time-derived values fall back to defaults")
+            return None
 
     def _create_portfolio(self) -> Portfolio:
         """Create and configure portfolio instance"""
         return Portfolio(
+            recorder=self.recorder,
             initial_cash=self.initial_cash,
             max_positions=self.max_positions,
             min_trade_size=self.min_trade_size,
@@ -229,7 +275,7 @@ class Engine:
 
     def _format_timestamp(self, timestamp: int) -> str:
         """Format Unix millis timestamp as readable string"""
-        return datetime.utcfromtimestamp(timestamp / 1000).strftime("%Y-%m-%d %H:%M")
+        return datetime.fromtimestamp(timestamp / 1000, tz=timezone.utc).strftime("%Y-%m-%d %H:%M")
 
     # ========================================================================
     # Class Methods - Batch Execution
@@ -284,7 +330,7 @@ class Engine:
                     iterator.set_postfix({
                         "strategy": strategy_class.__name__,
                         "return": f"{analyzer.metrics['total_return_pct']:+.1f}%",
-                        "sharpe": f"{analyzer.metrics['sharpe']:.2f}"
+                        "sharpe": str(analyzer.metrics['sharpe'])
                     })
 
             except Exception as e:

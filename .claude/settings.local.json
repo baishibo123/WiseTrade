@@ -1,7 +1,9 @@
 {
   "permissions": {
     "allow": [
-      "Bash(wc:*)"
+      "Bash(wc:*)",
+      "Bash(python3 -m py_compile core/batch/__init__.py core/batch/types.py core/batch/atomic_io.py core/batch/recorder.py core/batch/worker.py core/batch/orchestrator.py core/batch/config.py)",
+      "Bash(python3 -m py_compile strategies/base.py run_ranking.py)"
     ]
   }
 }

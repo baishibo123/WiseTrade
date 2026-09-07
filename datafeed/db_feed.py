@@ -35,7 +35,8 @@ class DatabaseFeed(BaseFeed):
             symbol: str,
             start_datetime: int,
             end_datetime: int,
-            db_config: Optional[dict] = None
+            db_config: Optional[dict] = None,
+            regular_hours_only: Optional[bool] = None
     ):
         """
         Initialize database feed
@@ -49,6 +50,11 @@ class DatabaseFeed(BaseFeed):
         self.symbol = symbol
         self.start_datetime = start_datetime
         self.end_datetime = end_datetime
+
+        if regular_hours_only is None:
+            from config import REGULAR_HOURS_ONLY
+            regular_hours_only = REGULAR_HOURS_ONLY
+        self.regular_hours_only = regular_hours_only
 
         # Load database config
         if db_config is None:
@@ -77,18 +83,70 @@ class DatabaseFeed(BaseFeed):
     def _init_sqlite(self):
         """Initialize SQLite connection with Row factory for named access"""
         import sqlite3
+        from pathlib import Path
 
-        db_path = self.db_config.get("path", "data/bars.db")
-        self.connection = sqlite3.connect(db_path)
+        raw_path = self.db_config.get("path")
+        if not raw_path:
+            raise ValueError("SQLite db_config is missing a 'path' key")
+        db_path = Path(raw_path)
+
+        # Check existence explicitly. sqlite3.connect() CREATES an empty
+        # database when the path is missing, so a wrong path would otherwise
+        # surface one line later as "no such table: bars" -- pointing at the
+        # schema instead of at the path -- and leave a stray empty file behind.
+        # With N workers that is N chances to litter.
+        if not db_path.exists():
+            raise FileNotFoundError(
+                f"Bar database not found: {db_path}\n"
+                "Check config.SQLITE_DB_PATH, or build the database with "
+                "database/sqlite_db.py."
+            )
+
+        # Read-only. Batch workers only ever SELECT, and making that structural
+        # means 15 concurrent processes cannot corrupt the shared 3 GB file --
+        # which is the assumption ADR-001 rests on. as_posix() keeps the URI
+        # valid on Windows (file:C:/Users/... rather than file:C:\Users\...).
+        uri = f"file:{db_path.as_posix()}?mode=ro"
+        try:
+            self.connection = sqlite3.connect(uri, uri=True)
+        except sqlite3.OperationalError as e:
+            raise sqlite3.OperationalError(
+                f"Could not open {db_path} read-only: {e}. If the database is in "
+                "WAL mode, a read-only connection still needs to create the "
+                "-shm/-wal sidecar files: either make the containing directory "
+                "writable, or add '&immutable=1' to the URI above if the file is "
+                "guaranteed not to change while the batch runs."
+            ) from e
 
         # CRITICAL: Enable dictionary-like access to rows
         self.connection.row_factory = sqlite3.Row
 
         self.cursor = self.connection.cursor()
 
-        self.cursor.execute("""
+        # Never `bars`: split adjustment is a view over immutable raw bars
+        # (database/adjustments.py), so reading the base table silently yields
+        # unadjusted prices -- NVDA drops 10x on 2024-06-10 and every metric
+        # spanning that date is wrong. bars_rth layers the regular-hours filter
+        # on top of the adjusted view (database/sessions.py), so it is never
+        # possible to get RTH-filtered *unadjusted* bars.
+        source = "bars_rth" if self.regular_hours_only else "bars_adjusted"
+
+        if self.regular_hours_only:
+            # bars_rth INNER JOINs sessions, so an EMPTY sessions table yields
+            # zero rows rather than an error -- and since regular_hours_only is
+            # the default, every backtest would report status=ok with no trades
+            # and 0.00% return, with nothing naming the cause. A *missing* table
+            # already fails loudly; this makes the empty case fail the same way.
+            n_sessions = self.cursor.execute("SELECT COUNT(*) FROM sessions").fetchone()[0]
+            if not n_sessions:
+                raise RuntimeError(
+                    f"{db_path}: the sessions table is empty, so the regular-hours view "
+                    "bars_rth matches nothing. Run utils/build_database.py to derive "
+                    "sessions, or pass regular_hours_only=False to read all hours."
+                )
+        self.cursor.execute(f"""
             SELECT symbol, datetime, open, high, low, close, volume
-            FROM bars
+            FROM {source}
             WHERE symbol = ? AND datetime >= ? AND datetime <= ?
             ORDER BY datetime
         """, (self.symbol, self.start_datetime, self.end_datetime))

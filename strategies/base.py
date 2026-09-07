@@ -10,6 +10,7 @@ import logging
 
 from database.schema import Bar
 from strategies.indicators import *  # Import all indicator functions
+from config import DEFAULT_MAX_LOOKBACK
 
 
 class Strategy(ABC):
@@ -28,8 +29,19 @@ class Strategy(ABC):
     4. next: Called after all symbols updated (generates signals)
     5. on_end: Called once after backtest (cleanup, final exits)
 
+    VERSIONING (ADR-004):
+        The batch backtester hashes (class name, VERSION, params, universe,
+        time range) into a deterministic run_id used for resumability. If you
+        change strategy behavior — even a one-line bug fix — bump VERSION on
+        the subclass, otherwise opt-in resume will return stale results from
+        a prior run that used the old logic. Renaming params or the class
+        also invalidates the hash automatically; only behavior changes that
+        leave the surface API alone need a manual bump.
+
     Usage:
         class MyStrategy(Strategy):
+            VERSION = "1.0"   # bump on any behavior change
+
             def _update_indicators(self, symbol: str):
                 # Calculate indicators for this symbol
                 closes = self.get_closes(symbol)
@@ -43,6 +55,8 @@ class Strategy(ABC):
                         signals[symbol] = {"action": "BUY", "score": 0.8, "quantity": 10.0}
                 return signals
     """
+
+    VERSION: str = "1.0"
 
     def __init__(
             self,
@@ -59,9 +73,13 @@ class Strategy(ABC):
         self.universe = universe
         self.params = params or {}
         self.portfolio = None  # Will be injected by Engine
+        # TradingCalendar, injected by Engine. The single source for every
+        # time-derived value: session bounds, minutes to close, bars per year.
+        # Never do timezone arithmetic on a bar timestamp directly (ADR-019).
+        self.calendar = None
 
         # Per-symbol bar history
-        self._lookback = self.params.get('max_lookback', 300)
+        self._lookback = self.params.get('max_lookback', DEFAULT_MAX_LOOKBACK)
         self.history: Dict[str, Deque[Bar]] = {
             symbol: deque(maxlen=self._lookback) for symbol in universe
         }
@@ -100,13 +118,23 @@ class Strategy(ABC):
         Returns:
             Optional signals dict (e.g., to close all positions)
         """
-        # Default: close all open positions
-        if self.portfolio and self.portfolio.positions:
-            logging.info(f"Strategy '{self.name}' ending: closing {len(self.portfolio.positions)} positions")
-            return {
-                symbol: {"action": "SELL", "score": 1.0}
-                for symbol in self.portfolio.positions.keys()
-            }
+        # Default: do nothing. Positions still open at the end of the backtest
+        # stay open.
+        #
+        # This used to force-liquidate everything. Two reasons it no longer does.
+        # (1) It cost nothing to remove: the equity curve is already marked to
+        #     market, so final equity -- and therefore every returns-based metric
+        #     -- is identical whether or not the position is sold at that last
+        #     close. Force-closing at the same close price makes the very same
+        #     zero-slippage assumption.
+        # (2) It corrupted the trade statistics. A forced exit at the backtest
+        #     boundary is an artifact of where the window happens to end, not a
+        #     decision the strategy made, yet it was scored as a win or a loss
+        #     like any other. Open positions are now reported as open episodes
+        #     and excluded from win rates (see core/episodes.py).
+        #
+        # A strategy that genuinely needs end-of-run behavior can still override
+        # this and return signals.
         return None
 
     # ========================================================================
