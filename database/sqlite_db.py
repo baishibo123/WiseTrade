@@ -34,7 +34,12 @@ TECH_100 = {
     "CSCO", "DELL", "HPQ", "HPE", "GLW", "STX", "WDC", "NTAP", "SMCI",
     "PSTG", "IONQ",
     # Fintech / Payments
-    "V", "MA", "PYPL", "FIS", "FI", "GPN", "AFRM", "TOST"   # FI = Fiserv (was FISV until 2023)
+    # Fiserv trades as FI through 2025-10-31 and as FISV from 2025-11-11, with
+    # six sessions where neither ticker has data. FI is listed because it covers
+    # 478 sessions against FISV's 13, but neither alone spans the window -- see
+    # ADR-024. A backtest ending after 2025-10-31 will report reduced session
+    # coverage for this symbol, which is correct rather than a bug.
+    "V", "MA", "PYPL", "FIS", "FI", "GPN", "AFRM", "TOST"
 }
 
 

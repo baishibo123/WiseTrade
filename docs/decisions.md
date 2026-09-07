@@ -305,3 +305,33 @@ Three instances, all found by the same reasoning:
 
 **Consequence already recorded elsewhere:** the regular-hours flag is a result-affecting input and is now part of `run_id`. It is the third such input found outside the hash, after portfolio config (ADR-013) and the bar data itself (ADR-022, still open).
 
+---
+
+## ADR-024 · FUTURE: Ticker changes fragment a symbol's history
+
+**Status:** FUTURE — the problem is characterised and reproducible; no mechanism is chosen, and the obvious one is blocked on a reference source we do not have.
+
+**Problem:** A company's minute data appears under different tickers at different times, so a universe entry is implicitly *time-dependent* while the code treats it as a constant string. Observed in the current data for Fiserv:
+
+```
+FI      2024-01-02 → 2025-10-31   478 sessions
+(none)  2025-11-03 → 2025-11-10     6 sessions, neither ticker
+FISV    2025-11-11 → 2025-11-26    13 sessions
+```
+
+Neither ticker spans the window. Backtesting `FI` over 2025-07-02 → 2025-11-25 silently covers 86 of 102 sessions and, worse, **ends early** — so its return is measured over roughly four months while every other symbol gets five. That makes the row non-comparable in exactly the ranking ADR-011 exists to make comparable, and `TECH_100` currently carries a single ticker per company with no notion of validity dates.
+
+**Why it was found at all:** only because per-run session coverage is reported in the metrics. Before that, `FI` sat in the ranking table indistinguishable from 114 complete symbols. The one-day `GOOG` gap was known in advance; this one was not, and it is seventeen times larger.
+
+**Blocked on:** there is no available source listing US ticker changes with effective dates. That is the gating dependency — the storage design is straightforward, the reference data is not.
+
+**Candidate mechanisms, none decided.**
+
+*An alias table.* `symbol_aliases(canonical_id, ticker, valid_from, valid_to)`, with the feed unioning across a canonical id's aliases. Structurally identical to `adj_factors` — an interval table resolving a time-varying attribute — so it would compose with what exists. Needs the reference data above.
+
+*Detect candidates from the data.* A ticker whose history ends as another's begins is a candidate pair, and price continuity across the seam confirms it: FI closed 66.24 on 2025-10-31, FISV opened 63.00 on 2025-11-11, a ratio of 0.95 across a six-session gap. That is the same continuity test `validate_adjustments` already uses for splits, pointed at a different discontinuity. It cannot be trusted to rewrite a universe unattended, but it can propose pairs for a human to confirm, which converts an unbounded research problem into a short review list.
+
+*Do nothing and rely on coverage reporting.* Accept per-ticker fragmentation, and let `session_coverage_pct` flag the affected rows so they can be excluded or read with care. This is the current behaviour, and it is honest — it is only insufficient once such a symbol is one you actually care about.
+
+**Note the failure shape**, because it recurs: nothing errors. The ingest, the feed, the calendar and the batch all handle a missing symbol-day correctly and the run completes with `status="ok"`. What was missing was not error handling but *visibility*, and the same is true of the split conventions (ADR-023) and the un-hashed inputs (ADR-022).
+
