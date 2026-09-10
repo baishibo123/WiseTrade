@@ -35,4 +35,36 @@ The same principle applies beyond coding — to the knowledge-restructuring proj
 
 ---
 
+## NOTE: cost lives in the plan, not in the text
+
+*Added after a 40x speedup on a query whose text barely changed. It is about SQL
+because that is where I met it, but the shape is not specific to SQL.*
+
+Two statements returning byte-identical results ran 167 ms and 4.2 ms. One
+scanned a 479-row table once per bar; the other scanned it once in total.
+Nothing in the SQL said which — only `EXPLAIN QUERY PLAN` did. Then a second
+pair, `SELECT DISTINCT symbol` against `SELECT symbol ... GROUP BY symbol`,
+measured 0.3 ms against 503 ms over the same 25.5M rows with *identical plan
+output*.
+
+- **The plan is the artifact under review, not the query.** Any time a large
+  relation joins a small one, read the plan before trusting the text.
+
+- **The plan is necessary and not sufficient.** That second pair is the warning:
+  when the plans match and the clock does not, the clock wins. Measure the thing
+  being shipped, never a proxy for it.
+
+- **Prefer the lever that pins the plan over the one that hopes for it.** A hint
+  the engine is obliged to honour beats a rewrite that happens to produce a good
+  plan on today's statistics. The good plan is not the property worth having —
+  the guarantee is.
+
+- **This is `failure cost × detectability` with the usual intuition inverted.**
+  The catastrophic plan is loud: 42 minutes files its own bug report. The merely
+  bad plan is silent — 167 ms feels fine, ships, and becomes the floor that
+  everything above it is built on. The dangerous case is not the disaster, it is
+  the one that is only slightly too slow.
+
+---
+
 *Last reviewed: August 9, 2026.*
