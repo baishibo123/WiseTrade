@@ -1,0 +1,15 @@
+{
+  "name": "bars_count_5m_one_month",
+  "note": "How many bars /bars would return for the same range with no limit. Counts buckets that have data, so it cannot disagree with len(bars).",
+  "route": "/bars/count",
+  "params": {
+    "symbol": "AAPL",
+    "period": "5m",
+    "t0_ms": 1756699200000,
+    "t1_ms": 1759291200000,
+    "rth": true
+  },
+  "response": {
+    "n": 1638
+  }
+}

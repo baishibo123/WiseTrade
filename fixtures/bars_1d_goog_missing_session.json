@@ -1,0 +1,58 @@
+{
+  "name": "bars_1d_goog_missing_session",
+  "note": "GOOG across 2025-09-22..28. Four daily bars for five sessions: 2025-09-24 has no bars at all, so it has no bucket. Compare against sessions_week_around_goog_gap, which still lists it.",
+  "route": "/bars",
+  "params": {
+    "symbol": "GOOG",
+    "period": "1d",
+    "t0_ms": 1758513600000,
+    "t1_ms": 1759032000000,
+    "rth": true,
+    "limit": 5000
+  },
+  "response": {
+    "bars": [
+      {
+        "t_ms": 1758571200000,
+        "open": 254.78,
+        "high": 256.31,
+        "low": 250.81,
+        "close": 252.885,
+        "volume": 16490009.0,
+        "n_src": 390,
+        "n_expected": 390
+      },
+      {
+        "t_ms": 1758657600000,
+        "open": 253.655,
+        "high": 254.77,
+        "low": 251.09,
+        "close": 252.33,
+        "volume": 12721005.0,
+        "n_src": 390,
+        "n_expected": 390
+      },
+      {
+        "t_ms": 1758830400000,
+        "open": 244.84,
+        "high": 247.315,
+        "low": 241.65,
+        "close": 246.58,
+        "volume": 14438270.0,
+        "n_src": 390,
+        "n_expected": 390
+      },
+      {
+        "t_ms": 1758916800000,
+        "open": 247.785,
+        "high": 250.12,
+        "low": 246.64,
+        "close": 247.18,
+        "volume": 12297701.0,
+        "n_src": 390,
+        "n_expected": 390
+      }
+    ],
+    "has_more": true
+  }
+}

@@ -1,0 +1,56 @@
+{
+  "name": "sessions_week_around_goog_gap",
+  "note": "Five sessions. 2025-09-24 is present here even though GOOG has no bars on it at all -- that pairing is how a consumer tells a real hole from a weekend, and it is why this route exists.",
+  "route": "/sessions",
+  "params": {
+    "t0_ms": 1758513600000,
+    "t1_ms": 1759032000000
+  },
+  "response": [
+    {
+      "et_date": "2025-09-22",
+      "ext_open_ms": 1758528060000,
+      "rth_open_ms": 1758547800000,
+      "rth_close_ms": 1758571200000,
+      "ext_close_ms": 1758577140000,
+      "n_bars_rth": 390,
+      "is_half_day": false
+    },
+    {
+      "et_date": "2025-09-23",
+      "ext_open_ms": 1758614460000,
+      "rth_open_ms": 1758634200000,
+      "rth_close_ms": 1758657600000,
+      "ext_close_ms": 1758672000000,
+      "n_bars_rth": 390,
+      "is_half_day": false
+    },
+    {
+      "et_date": "2025-09-24",
+      "ext_open_ms": 1758700860000,
+      "rth_open_ms": 1758720600000,
+      "rth_close_ms": 1758744000000,
+      "ext_close_ms": 1758750060000,
+      "n_bars_rth": 390,
+      "is_half_day": false
+    },
+    {
+      "et_date": "2025-09-25",
+      "ext_open_ms": 1758787260000,
+      "rth_open_ms": 1758807000000,
+      "rth_close_ms": 1758830400000,
+      "ext_close_ms": 1758836280000,
+      "n_bars_rth": 390,
+      "is_half_day": false
+    },
+    {
+      "et_date": "2025-09-26",
+      "ext_open_ms": 1758873660000,
+      "rth_open_ms": 1758893400000,
+      "rth_close_ms": 1758916800000,
+      "ext_close_ms": 1758931200000,
+      "n_bars_rth": 390,
+      "is_half_day": false
+    }
+  ]
+}

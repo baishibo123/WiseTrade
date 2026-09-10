@@ -1,0 +1,20 @@
+{
+  "name": "sessions_half_day",
+  "note": "2024-07-03 closes at 13:00 ET. is_half_day is true and rth_close_ms is three hours early.",
+  "route": "/sessions",
+  "params": {
+    "t0_ms": 1720013400000,
+    "t1_ms": 1720026000000
+  },
+  "response": [
+    {
+      "et_date": "2024-07-03",
+      "ext_open_ms": 1719993660000,
+      "rth_open_ms": 1720013400000,
+      "rth_close_ms": 1720026000000,
+      "ext_close_ms": 1720040400000,
+      "n_bars_rth": 210,
+      "is_half_day": true
+    }
+  ]
+}

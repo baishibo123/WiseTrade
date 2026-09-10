@@ -1,0 +1,185 @@
+{
+  "generated_from": "us_market_1min.sqlite",
+  "contract": "docs/interfaces.md",
+  "cases": [
+    {
+      "name": "symbols",
+      "file": "symbols.json",
+      "route": "/symbols",
+      "params": {},
+      "note": "Every symbol the service can serve. 115 of them.",
+      "summary": "115 items"
+    },
+    {
+      "name": "sessions_week_around_goog_gap",
+      "file": "sessions_week_around_goog_gap.json",
+      "route": "/sessions",
+      "params": {
+        "t0_ms": 1758513600000,
+        "t1_ms": 1759032000000
+      },
+      "note": "Five sessions. 2025-09-24 is present here even though GOOG has no bars on it at all -- that pairing is how a consumer tells a real hole from a weekend, and it is why this route exists.",
+      "summary": "5 items"
+    },
+    {
+      "name": "sessions_half_day",
+      "file": "sessions_half_day.json",
+      "route": "/sessions",
+      "params": {
+        "t0_ms": 1720013400000,
+        "t1_ms": 1720026000000
+      },
+      "note": "2024-07-03 closes at 13:00 ET. is_half_day is true and rth_close_ms is three hours early.",
+      "summary": "1 items"
+    },
+    {
+      "name": "bars_1d_one_session_5m",
+      "file": "bars_1d_one_session_5m.json",
+      "route": "/bars",
+      "params": {
+        "symbol": "AAPL",
+        "period": "5m",
+        "t0_ms": 1704205800000,
+        "t1_ms": 1704229200000,
+        "rth": true,
+        "limit": 5000
+      },
+      "note": "The baseline: one full session at 5m. 78 buckets, every n_src == n_expected == 5.",
+      "summary": "78 bars, has_more=False, 0 incomplete, t_ms 1704206100000..1704229200000"
+    },
+    {
+      "name": "bars_1h_short_first_bucket",
+      "file": "bars_1h_short_first_bucket.json",
+      "route": "/bars",
+      "params": {
+        "symbol": "AAPL",
+        "period": "1h",
+        "t0_ms": 1704205800000,
+        "t1_ms": 1704229200000,
+        "rth": true,
+        "limit": 5000
+      },
+      "note": "60 does not divide 390. Buckets are anchored on the CLOSE, so the short one is the session's FIRST (09:30-10:00, n_expected 30) and every session still ends exactly at 16:00. Seven buckets, not six or eight.",
+      "summary": "7 bars, has_more=False, 0 incomplete, t_ms 1704207600000..1704229200000"
+    },
+    {
+      "name": "bars_2h_short_first_bucket",
+      "file": "bars_2h_short_first_bucket.json",
+      "route": "/bars",
+      "params": {
+        "symbol": "AAPL",
+        "period": "2h",
+        "t0_ms": 1704205800000,
+        "t1_ms": 1704229200000,
+        "rth": true,
+        "limit": 5000
+      },
+      "note": "Same again at 2h: four buckets, the first spanning only 30 minutes.",
+      "summary": "4 bars, has_more=False, 0 incomplete, t_ms 1704207600000..1704229200000"
+    },
+    {
+      "name": "bars_1h_half_day",
+      "file": "bars_1h_half_day.json",
+      "route": "/bars",
+      "params": {
+        "symbol": "AAPL",
+        "period": "1h",
+        "t0_ms": 1720013400000,
+        "t1_ms": 1720026000000,
+        "rth": true,
+        "limit": 5000
+      },
+      "note": "The half day at 1h: four buckets ending 10:00, 11:00, 12:00, 13:00. Nothing after 13:00 exists and that is not missing data.",
+      "summary": "4 bars, has_more=True, 0 incomplete, t_ms 1720015200000..1720026000000"
+    },
+    {
+      "name": "bars_2h_half_day",
+      "file": "bars_2h_half_day.json",
+      "route": "/bars",
+      "params": {
+        "symbol": "AAPL",
+        "period": "2h",
+        "t0_ms": 1720013400000,
+        "t1_ms": 1720026000000,
+        "rth": true,
+        "limit": 5000
+      },
+      "note": "The half day at 2h: two buckets, the first 90 minutes wide (09:30-11:00). A period's short bucket is not a fixed width -- it depends on the session.",
+      "summary": "2 bars, has_more=True, 0 incomplete, t_ms 1720018800000..1720026000000"
+    },
+    {
+      "name": "bars_5m_incomplete_buckets",
+      "file": "bars_5m_incomplete_buckets.json",
+      "route": "/bars",
+      "params": {
+        "symbol": "AKAM",
+        "period": "5m",
+        "t0_ms": 1704378600000,
+        "t1_ms": 1704402000000,
+        "rth": true,
+        "limit": 5000
+      },
+      "note": "AKAM 2024-01-04 has 346 of 390 RTH minutes. Several 5m buckets report n_src < n_expected, one of them n_src=1. These are the bars a chart should outline differently; the service does not decide what to do about them.",
+      "summary": "78 bars, has_more=True, 31 incomplete, t_ms 1704378900000..1704402000000"
+    },
+    {
+      "name": "bars_1d_goog_missing_session",
+      "file": "bars_1d_goog_missing_session.json",
+      "route": "/bars",
+      "params": {
+        "symbol": "GOOG",
+        "period": "1d",
+        "t0_ms": 1758513600000,
+        "t1_ms": 1759032000000,
+        "rth": true,
+        "limit": 5000
+      },
+      "note": "GOOG across 2025-09-22..28. Four daily bars for five sessions: 2025-09-24 has no bars at all, so it has no bucket. Compare against sessions_week_around_goog_gap, which still lists it.",
+      "summary": "4 bars, has_more=True, 0 incomplete, t_ms 1758571200000..1758916800000"
+    },
+    {
+      "name": "bars_5m_extended_hours",
+      "file": "bars_5m_extended_hours.json",
+      "route": "/bars",
+      "params": {
+        "symbol": "AAPL",
+        "period": "5m",
+        "t0_ms": 1704184200000,
+        "t1_ms": 1704243600000,
+        "rth": false,
+        "limit": 5000
+      },
+      "note": "rth=false. n_expected is null on every bar, because extended-hours coverage varies by orders of magnitude between symbols and no theoretical count exists. A renderer must not treat null as zero.",
+      "summary": "191 bars, has_more=False, 0 incomplete, t_ms 1704186300000..1704243600000"
+    },
+    {
+      "name": "bars_5m_paged_has_more",
+      "file": "bars_5m_paged_has_more.json",
+      "route": "/bars",
+      "params": {
+        "symbol": "AAPL",
+        "period": "5m",
+        "t0_ms": 1756699200000,
+        "t1_ms": 1759291200000,
+        "rth": true,
+        "limit": 120
+      },
+      "note": "One month of 5m truncated to 120 buckets. The NEWEST 120 are returned and has_more is true; panning left means refetching with an earlier t1_ms. The period is never coarsened to make a range fit.",
+      "summary": "120 bars, has_more=True, 0 incomplete, t_ms 1759163700000..1759262400000"
+    },
+    {
+      "name": "bars_count_5m_one_month",
+      "file": "bars_count_5m_one_month.json",
+      "route": "/bars/count",
+      "params": {
+        "symbol": "AAPL",
+        "period": "5m",
+        "t0_ms": 1756699200000,
+        "t1_ms": 1759291200000,
+        "rth": true
+      },
+      "note": "How many bars /bars would return for the same range with no limit. Counts buckets that have data, so it cannot disagree with len(bars).",
+      "summary": "{\"n\": 1638}"
+    }
+  ]
+}

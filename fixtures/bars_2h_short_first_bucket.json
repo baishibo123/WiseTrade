@@ -1,0 +1,58 @@
+{
+  "name": "bars_2h_short_first_bucket",
+  "note": "Same again at 2h: four buckets, the first spanning only 30 minutes.",
+  "route": "/bars",
+  "params": {
+    "symbol": "AAPL",
+    "period": "2h",
+    "t0_ms": 1704205800000,
+    "t1_ms": 1704229200000,
+    "rth": true,
+    "limit": 5000
+  },
+  "response": {
+    "bars": [
+      {
+        "t_ms": 1704207600000,
+        "open": 187.15,
+        "high": 188.44,
+        "low": 186.01,
+        "close": 186.52,
+        "volume": 14175884.0,
+        "n_src": 30,
+        "n_expected": 30
+      },
+      {
+        "t_ms": 1704214800000,
+        "open": 186.52,
+        "high": 187.35,
+        "low": 185.1843,
+        "close": 186.7443,
+        "volume": 16987509.0,
+        "n_src": 120,
+        "n_expected": 120
+      },
+      {
+        "t_ms": 1704222000000,
+        "open": 186.75,
+        "high": 187.04,
+        "low": 184.745,
+        "close": 184.9083,
+        "volume": 12071543.0,
+        "n_src": 120,
+        "n_expected": 120
+      },
+      {
+        "t_ms": 1704229200000,
+        "open": 184.9025,
+        "high": 185.64,
+        "low": 183.885,
+        "close": 185.525,
+        "volume": 20641452.0,
+        "n_src": 120,
+        "n_expected": 120
+      }
+    ],
+    "has_more": false
+  }
+}
