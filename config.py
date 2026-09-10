@@ -199,3 +199,15 @@ DEFAULT_MIN_TRADE_SIZE = 0.1
 MONGO_URI = "mongodb://localhost:27017"
 MONGO_DB_NAME = "us_market"
 MONGO_COLLECTION = "bars_1min"
+
+# ============================================================================
+# HTTP service (api/)
+# ============================================================================
+# Appended by feat/bar-service. Additions here go at the end of the file, never
+# in the middle, so parallel branches cannot produce a textual conflict.
+
+# Where scripts/dump_fixtures.py writes the real JSON payloads that
+# feat/chart-ui develops against. Committed rather than gitignored: a UI built
+# against an imagined API cannot detect that it imagined it, and the whole point
+# of the fixture is to be the thing that was actually served.
+FIXTURES_DIR = PROJECT_ROOT / "fixtures"
