@@ -93,3 +93,39 @@ Any `decisions.md` or ADR entries the branch carries are claimed intent, not est
 ---
 
 *Last reviewed: August 9, 2026.*
+
+---
+
+## 6. Language
+
+The operational rules live in `CLAUDE.md` §Language. This section is why they are
+what they are, so that they are not re-derived or re-litigated.
+
+This is the same meta-principle as §1: **cognitive bandwidth conservation.** English
+is not uniformly expensive to me — production is not a limitation and code is
+language-neutral, reading identically either way. The cost is narrow and specific:
+**reading speed on long English natural-language prose**, concentrated in formal
+register — postponed modifiers, stacked clauses, inverted structures. Conversational
+English is fine.
+
+So the tax falls on exactly one layer, and it is the layer nothing downstream depends
+on:
+
+| Layer | Language | Why |
+|---|---|---|
+| **Artifacts** — code, comments, commit messages, filenames, docs, config | English, always | Short, permanent, expensive to reverse; keeps the repo legible to collaborators and to models |
+| **My input** — prompts, planning, debugging, thinking out loud | Chinese, technical terms in English | Fastest available thinking speed; the terms are their real names |
+| **Model output** — explanatory prose | Chinese | The only layer carrying the reading tax, and the only one that is transient |
+
+Stated as one rule: **keep English where it is permanent and cheap; drop it where it
+is transient and expensive.**
+
+### Settled — do not re-litigate
+
+- **Using English prompts as English practice: rejected.** My two actual gaps are
+  parsing suspended and embedded English syntax, and real-time transactional
+  listening. Typing English at a model trains neither — it trains typed production,
+  which is not a gap, and it costs throughput. This protocol is not a language
+  maintenance mechanism and must not be treated as one.
+- **This does not change after the November relocation.** Nothing in it depends on
+  being in an English-speaking environment.

@@ -7,6 +7,25 @@ conventions** — rules that hold across the project's life. Decisions with alte
 rationale go in `docs/decisions.md`; current state lives in the code and git history and
 must not be duplicated here, because it goes stale and then misleads.*
 
+## Language
+
+Rationale in `docs/collaboration-protocol.md` §6. The rules:
+
+- Respond in Chinese (简体中文), keeping technical terminology in English. Do not
+  translate `race condition`, `async`, `retry`, `embedding`, `gate`, `episode`.
+- **All artifacts are English**: code, comments, identifiers, filenames, commit
+  messages, ADR entries, `docs/*.md`, and anything destined for a PR, an issue, or
+  an external reader. The language of the surrounding conversation does not change
+  this.
+- **Never translate a primary source.** Papers, official docs, GitHub issues, RFCs,
+  specs, error output: quote the original English.
+- The split runs *through* a single turn. Proposing an ADR in chat means Chinese
+  prose around an English ADR body — the body is written as it will land in the file,
+  not translated afterwards.
+- Be concise. Prefer the decision, a diff, or a short bullet summary over narrative
+  explanation. Long explanatory prose is the main thing to avoid — the same
+  constraint `collaboration-protocol.md` §3 enforces on reply structure.
+
 ## Working Norms
 
 Process patterns Claude should follow when collaborating in this repo. (Personal
