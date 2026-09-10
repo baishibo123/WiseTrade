@@ -36,6 +36,10 @@ dependencies = [
 ]
 
 [project.optional-dependencies]
+# The HTTP service (api/). Optional so the backtest engine, which is the thing
+# that has to run unattended in a batch, never depends on a web framework.
+api = ["fastapi>=0.115", "uvicorn[standard]>=0.30"]
+
 # Only needed when WISETRADE_DB_TYPE=postgresql. datafeed/db_feed.py imports
 # psycopg2 lazily inside _init_postgresql, so SQLite users never load it.
 # The -binary wheel avoids needing local libpq build tooling.
@@ -45,4 +49,4 @@ postgres = ["psycopg2-binary>=2.9"]
 py-modules = ["config"]
 
 [tool.setuptools.packages.find]
-include = ["core*", "database*", "datafeed*", "strategies*", "utils*"]
+include = ["api*", "core*", "database*", "datafeed*", "strategies*", "utils*"]
