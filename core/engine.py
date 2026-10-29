@@ -8,7 +8,7 @@ import logging
 from datetime import datetime, timezone
 
 from database.feed import BaseFeed, DatabaseFeed
-from database.schema import Bar
+from database.bar_record import Bar
 from strategies.base import Strategy
 from core.portfolio import Portfolio
 from core.analyzer import Analyzer
@@ -419,7 +419,7 @@ def test_engine():
     """
     Test Engine with mock strategy
     """
-    from database.schema import Bar
+    from database.bar_record import Bar
     from strategies.base import Strategy
     from strategies.indicators import calculate_sma
 

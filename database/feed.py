@@ -7,7 +7,7 @@ from abc import ABC, abstractmethod
 from typing import Optional
 import logging
 
-from database.schema import Bar
+from database.bar_record import Bar
 
 
 class BaseFeed(ABC):

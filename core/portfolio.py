@@ -5,7 +5,7 @@ import logging
 
 from core.curve_recorder import CurveRecorder, NullRecorder
 
-from database.schema import Bar
+from database.bar_record import Bar
 
 from dataclasses import dataclass
 

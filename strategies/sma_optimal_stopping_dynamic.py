@@ -9,7 +9,7 @@ Exit: Optimal Stopping with Dynamic Window based on time until market close
 
 from typing import Dict, Optional
 from datetime import datetime, timezone
-from database.schema import Bar
+from database.bar_record import Bar
 from strategies.base import Strategy
 from strategies.indicators import calculate_sma
 

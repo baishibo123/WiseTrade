@@ -5,7 +5,7 @@ Merges multiple symbol feeds into chronological event stream
 
 from typing import Dict, Iterator, Optional, Tuple
 from collections import defaultdict
-from database.schema import Bar
+from database.bar_record import Bar
 import logging
 
 
@@ -179,7 +179,7 @@ def test_time_aligned_iterator():
     Simple test to verify TimeAlignedIterator behavior
     Run this to validate the implementation
     """
-    from database.schema import Bar
+    from database.bar_record import Bar
 
     # Mock feeds with different timing
     def mock_feed_aapl():
