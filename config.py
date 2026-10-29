@@ -178,29 +178,6 @@ DATABASE_CONFIG = POSTGRESQL_CONFIG if DB_TYPE == "postgresql" else SQLITE_CONFI
 DEFAULT_MAX_LOOKBACK = 300
 
 # ============================================================================
-# Backtesting Defaults
-# ============================================================================
-# UNREFERENCED as of this commit: nothing outside config.py reads any name in
-# this section. The values Engine actually uses are hardcoded at
-# core/engine.py:88-92, and callers override them via portfolio_config. Kept
-# rather than deleted because tests/ is gitignored and its imports cannot be
-# checked from a fresh clone. Resolve by either deleting these or making
-# Engine read them -- three sources of truth is one too many.
-
-INITIAL_CASH = 100_000.0
-DEFAULT_TIMEFRAME = "1min"
-
-DEFAULT_INITIAL_CASH = 100_000.0
-DEFAULT_MAX_POSITIONS = 10
-DEFAULT_MAX_POSITION_PCT = 0.3
-DEFAULT_MIN_TRADE_SIZE = 0.1
-
-# Mongo settings (for later; also unreferenced)
-MONGO_URI = "mongodb://localhost:27017"
-MONGO_DB_NAME = "us_market"
-MONGO_COLLECTION = "bars_1min"
-
-# ============================================================================
 # HTTP service (api/)
 # ============================================================================
 # Appended by feat/bar-service. Additions here go at the end of the file, never
