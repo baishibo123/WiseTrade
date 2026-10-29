@@ -6,7 +6,7 @@ Buys when price crosses above SMA, sells when crosses below
 """
 
 from typing import Dict
-from database.schema import Bar
+from database.bar_record import Bar
 from strategies.base import Strategy
 from strategies.indicators import calculate_sma
 

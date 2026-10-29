@@ -8,7 +8,7 @@ from tqdm import tqdm
 import logging
 
 from config import RAW_DATA_ROOT, SQLITE_DB_PATH, require_raw_data_root
-from .schema import SQLITE_CREATE_TABLE, Bar
+from .bar_record import SQLITE_CREATE_TABLE, Bar
 
 # ----------------------------------------------------------------------
 # Your exact TECH_100 universe — only these symbols will be loaded

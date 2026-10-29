@@ -1,4 +1,4 @@
-# database/schema.py
+# database/bar_record.py
 from collections import namedtuple
 from datetime import datetime
 

@@ -8,7 +8,7 @@ from typing import Dict, List, Optional, Any, Deque
 from collections import deque
 import logging
 
-from database.schema import Bar
+from database.bar_record import Bar
 from strategies.indicators import *  # Import all indicator functions
 from config import DEFAULT_MAX_LOOKBACK
 
@@ -301,7 +301,7 @@ def test_strategy_base():
     """
     Test Strategy base class with mock data
     """
-    from database.schema import Bar
+    from database.bar_record import Bar
 
     print("\n=== Strategy Base Class Test ===")
 

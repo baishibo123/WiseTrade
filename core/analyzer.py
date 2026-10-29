@@ -489,7 +489,7 @@ def test_analyzer():
     Test Analyzer with mock portfolio data
     """
     from core.portfolio import Portfolio
-    from database.schema import Bar
+    from database.bar_record import Bar
 
     print("\n=== Analyzer Test ===")
 

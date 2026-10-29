@@ -8,7 +8,7 @@ Exit: Optimal Stopping with Fixed Window (N=390 bars)
 """
 
 from typing import Dict, Optional
-from database.schema import Bar
+from database.bar_record import Bar
 from strategies.base import Strategy
 from strategies.indicators import calculate_sma
 

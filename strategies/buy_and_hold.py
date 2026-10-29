@@ -1,6 +1,6 @@
 # strategies/buy_and_hold.py
 from .base import Strategy
-from database.schema import Bar
+from database.bar_record import Bar
 
 class BuyAndHold(Strategy):
     def on_start(self):
