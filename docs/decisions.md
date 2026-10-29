@@ -385,13 +385,22 @@ Neither ticker spans the window. Backtesting `FI` over 2025-07-02 → 2025-11-25
 | `core/batch/recorder.py` | `core/batch/parquet_recorder.py` | the implementation: `ParquetEquityRecorder` |
 | `database/sqlite_db.py` | `database/ingest.py` | what it actually does is CSV ingest |
 | `strategies/BuyAndHold.py` | `strategies/buy_and_hold.py` | snake_case; class `BuyAndHold` unchanged |
-| `strategies/SMA_OS_Fixed.py` | `strategies/sma_os_fixed.py` | snake_case; class `SMA_OS_Fixed` unchanged |
-| `strategies/SMA_OS_dynamic.py` | `strategies/sma_os_dynamic.py` | snake_case; class `SMA_OS_Dynamic` unchanged |
+| `strategies/SMA_OS_Fixed.py` | `strategies/sma_optimal_stopping_fixed.py` | snake_case, and "os" spelled out (it read as operating system); class `SMA_OS_Fixed` unchanged |
+| `strategies/SMA_OS_dynamic.py` | `strategies/sma_optimal_stopping_dynamic.py` | as above; class `SMA_OS_Dynamic` unchanged |
+| `strategies/simple_sma.py` | `strategies/price_sma_cross.py` | both SMA strategies are crossovers; this one is close crossing one SMA. Class `SimpleSMA` unchanged |
+| `strategies/sma_crossover.py` | `strategies/sma_fast_slow_cross.py` | the other one: fast SMA crossing slow SMA. Class `SMACrossover` unchanged |
+| `core/batch/types.py` | `core/batch/worker_contract.py` | `BatchTask`, `RunResult` and `compute_run_id` — named for the contract its docstring describes; `types` also shadowed the stdlib module for a script run from that directory |
+| `core/batch/orchestrator.py` | `core/batch/batch_runner.py` | holds `BatchRunner` |
+| `core/time_iterator.py` | `core/time_aligned_iterator.py` | holds `TimeAlignedIterator` |
+| `database/adjustments.py` | `database/split_adjustments.py` | splits only; dividend adjustment is not done here (and is unverified upstream) |
+| `run.py` | `run_single_symbol.py` | one symbol, every listed strategy, full summary — the counterpart of `run_ranking.py` |
+| `scripts/test_resample.py` | `scripts/acceptance_resample.py` | a `main()`-driven acceptance script, not a pytest module; a `test_` prefix would get it collected, and its `test_*(cal)` functions would then fail on a missing fixture |
+| `db/` (default database directory) | `data/` | `db/` and `database/` were near-synonyms, the same problem as `datafeed/`. Not code: the existing database file has to be moved on each machine, or `WISETRADE_SQLITE_DB_PATH` set |
 | `database/labels.py` (planned, never created) | `database/label_store.py` | would collide with `api/routers/labels.py`; routers are named for their URL domain and stay as they are |
 
 **Alternatives:** Rename classes alongside modules for full consistency; leave the names and rely on directory context to disambiguate.
 
-**Why modules and not classes.** `run_id` hashes `strategy_class.__name__` (`compute_run_id`, called from `core/batch/batch_config.py`), not the module path, so a module rename leaves every committed result reusable under ADR-021. A class rename would change every `run_id` and silently force a full recomputation. The module path is used only at run time, where `spawn` pickles a strategy class by qualified name; nothing persisted in `results/` records it.
+**Why modules and not classes.** `run_id` hashes `strategy_class.__name__` (`compute_run_id` in `core/batch/worker_contract.py`), not the module path, so a module rename leaves every committed result reusable under ADR-021. A class rename would change every `run_id` and silently force a full recomputation. The module path is used only at run time, where `spawn` pickles a strategy class by qualified name; nothing persisted in `results/` records it.
 
 **Why rename-only.** The rename lands on its own branch with no code moved, so it introduces exactly one failure mode — a stale import, which fails loudly at import time. Merging `datafeed/` into `database/` and `utils/` into `scripts/` moves code and is a separate, later layer.
 
