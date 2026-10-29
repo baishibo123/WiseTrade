@@ -203,7 +203,7 @@ not be reachable off-host.
 2. **Do not edit `CLAUDE.md`.** It is reconciled after the merges.
 3. **Append to `docs/decisions.md` only, using the pre-allocated numbers.** Never
    renumber an existing entry.
-4. **Do not edit `utils/build_database.py`.** `feat/label-store` creates its table
+4. **Do not edit `scripts/build_database.py`.** `feat/label-store` creates its table
    lazily rather than touching the shared build pipeline.
 5. **Add config constants at the end of `config.py`**, never in the middle.
 

@@ -1,4 +1,4 @@
-# utils/load_splits_to_db.py
+# database/split_ingest.py
 """
 Import splits.csv into the splits table.
 

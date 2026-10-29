@@ -224,11 +224,11 @@ CREATE TABLE splits (
 
 ## Quick Start
 ```bash
-# 1. Validate data
-python tests/diagnose_bar_gaps.py
+# 1. Build the bar database
+python scripts/build_database.py
 
-# 2. Run E2E test
-python tests/test_end_to_end.py
+# 2. Check bar aggregation against the real database
+python scripts/acceptance_resample.py
 
 # 3. Run custom backtest
 python run_single_symbol.py  # Or create custom script using Engine API
@@ -259,9 +259,9 @@ python run_single_symbol.py  # Or create custom script using Engine API
 
 **Core Logic:** `core/engine.py`, `core/portfolio.py`, `core/time_aligned_iterator.py`  
 **Strategy Framework:** `strategies/base.py`, `strategies/indicators.py`  
-**Data Access:** `datafeed/db_feed.py`  
-**Utilities:** `utils/adjust_database_sql.py`, `utils/load_splits_to_db.py`  
-**Testing:** `tests/test_end_to_end.py`, `tests/diagnose_bar_gaps.py`
+**Data Access:** `database/feed.py`  
+**Database build:** `scripts/build_database.py`, `database/split_ingest.py`  
+**Acceptance:** `scripts/acceptance_resample.py`
 
 ---
 

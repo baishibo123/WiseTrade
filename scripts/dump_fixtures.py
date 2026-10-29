@@ -184,7 +184,7 @@ def _summarise(case: dict) -> str:
 def main() -> int:
     if not SQLITE_DB_PATH.exists():
         print(f"bar database not found at {SQLITE_DB_PATH}\n"
-              f"set WISETRADE_SQLITE_DB_PATH, or build it with utils/build_database.py",
+              f"set WISETRADE_SQLITE_DB_PATH, or build it with scripts/build_database.py",
               file=sys.stderr)
         return 1
 

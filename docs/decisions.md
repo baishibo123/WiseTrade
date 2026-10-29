@@ -405,3 +405,23 @@ Neither ticker spans the window. Backtesting `FI` over 2025-07-02 → 2025-11-25
 **Why rename-only.** The rename lands on its own branch with no code moved, so it introduces exactly one failure mode — a stale import, which fails loudly at import time. Merging `datafeed/` into `database/` and `utils/` into `scripts/` moves code and is a separate, later layer.
 
 **Known gap:** `database/schema.py` is *not* renamed here. It holds the `Bar` namedtuple **and** the `bars` table DDL (`SQLITE_CREATE_TABLE`, used by the ingest to create the table), so a name describing only the record would be wrong. It is renamed when the DDL moves next to the ingest, which is code motion and belongs to the merge layer.
+
+---
+
+## ADR-033: `datafeed/` folds into `database/`, `utils/` into `scripts/` (extends ADR-032's path map)
+
+**Decided:** The two top-level packages that duplicated a neighbour are removed. Every file moves whole, so this is still a path change rather than code motion:
+
+| Old path | New path | Why |
+|---|---|---|
+| `datafeed/db_feed.py` | `database/feed.py` | `datafeed/` and `database/` were near-synonyms; reading bars is a database concern |
+| `utils/build_database.py` | `scripts/build_database.py` | an entry point, run and never imported |
+| `utils/load_splits_to_db.py` | `database/split_ingest.py` | a library function `scripts/build_database.py` imports, so it cannot live among scripts; it is the splits counterpart of `database/ingest.py` |
+
+**Alternatives:** Fold `load_splits_csv_to_db` into `database/ingest.py` or `database/split_adjustments.py`; keep `utils/` for library helpers and move only the script.
+
+**Why whole-file moves.** Folding a function into an existing module is code motion, and it breaks `git log --follow` and blame for that function. A whole-file move keeps both, and a stale import fails at import time. `scripts/` has no `__init__.py` and nothing imports from it — that is what separates a script from a library module here.
+
+**Why `split_ingest` and not `split_adjustments`.** Loading `splits.csv` is ingest, like loading the bar CSVs; deriving `adj_factors` and the adjusted view from the `splits` table is adjustment. Keeping them apart means the timezone decision for split boundaries still lives in exactly one module (`database/split_adjustments.py`).
+
+**Known residue:** a leftover `datafeed/__pycache__/` on any machine makes `import datafeed` succeed as a namespace package. Delete the directory after pulling.
