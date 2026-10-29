@@ -1,0 +1,38 @@
+{
+  "name": "bars_2h_half_day",
+  "note": "The half day at 2h: two buckets, the first 90 minutes wide (09:30-11:00). A period's short bucket is not a fixed width -- it depends on the session.",
+  "route": "/bars",
+  "params": {
+    "symbol": "AAPL",
+    "period": "2h",
+    "t0_ms": 1720013400000,
+    "t1_ms": 1720026000000,
+    "rth": true,
+    "limit": 5000
+  },
+  "response": {
+    "bars": [
+      {
+        "t_ms": 1720018800000,
+        "open": 220.0,
+        "high": 221.4,
+        "low": 219.03,
+        "close": 220.54,
+        "volume": 17235551.0,
+        "n_src": 90,
+        "n_expected": 90
+      },
+      {
+        "t_ms": 1720026000000,
+        "open": 220.55,
+        "high": 221.55,
+        "low": 219.77,
+        "close": 221.54,
+        "volume": 13890630.0,
+        "n_src": 120,
+        "n_expected": 120
+      }
+    ],
+    "has_more": true
+  }
+}

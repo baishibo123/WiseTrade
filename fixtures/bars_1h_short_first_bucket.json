@@ -1,0 +1,88 @@
+{
+  "name": "bars_1h_short_first_bucket",
+  "note": "60 does not divide 390. Buckets are anchored on the CLOSE, so the short one is the session's FIRST (09:30-10:00, n_expected 30) and every session still ends exactly at 16:00. Seven buckets, not six or eight.",
+  "route": "/bars",
+  "params": {
+    "symbol": "AAPL",
+    "period": "1h",
+    "t0_ms": 1704205800000,
+    "t1_ms": 1704229200000,
+    "rth": true,
+    "limit": 5000
+  },
+  "response": {
+    "bars": [
+      {
+        "t_ms": 1704207600000,
+        "open": 187.15,
+        "high": 188.44,
+        "low": 186.01,
+        "close": 186.52,
+        "volume": 14175884.0,
+        "n_src": 30,
+        "n_expected": 30
+      },
+      {
+        "t_ms": 1704211200000,
+        "open": 186.52,
+        "high": 186.97,
+        "low": 185.1843,
+        "close": 185.89,
+        "volume": 9900793.0,
+        "n_src": 60,
+        "n_expected": 60
+      },
+      {
+        "t_ms": 1704214800000,
+        "open": 185.88,
+        "high": 187.35,
+        "low": 185.87,
+        "close": 186.7443,
+        "volume": 7086716.0,
+        "n_src": 60,
+        "n_expected": 60
+      },
+      {
+        "t_ms": 1704218400000,
+        "open": 186.75,
+        "high": 187.04,
+        "low": 185.8401,
+        "close": 185.878,
+        "volume": 5834968.0,
+        "n_src": 60,
+        "n_expected": 60
+      },
+      {
+        "t_ms": 1704222000000,
+        "open": 185.885,
+        "high": 185.9576,
+        "low": 184.745,
+        "close": 184.9083,
+        "volume": 6236575.0,
+        "n_src": 60,
+        "n_expected": 60
+      },
+      {
+        "t_ms": 1704225600000,
+        "open": 184.9025,
+        "high": 184.98,
+        "low": 184.01,
+        "close": 184.05,
+        "volume": 6678217.0,
+        "n_src": 60,
+        "n_expected": 60
+      },
+      {
+        "t_ms": 1704229200000,
+        "open": 184.045,
+        "high": 185.64,
+        "low": 183.885,
+        "close": 185.525,
+        "volume": 13963235.0,
+        "n_src": 60,
+        "n_expected": 60
+      }
+    ],
+    "has_more": false
+  }
+}
