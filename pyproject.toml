@@ -26,7 +26,7 @@ dependencies = [
     # after a backtest has already been computed. ADR-007 depends on it.
     "pyarrow>=14",
     # progress bars; also the write path that lets logs and the batch progress
-    # bar share stderr without tearing (core/batch/orchestrator.py)
+    # bar share stderr without tearing (core/batch/batch_runner.py)
     "tqdm>=4.66",
     # Authoritative exchange session hours. The session *set* is derived from
     # the bar data (ADR-019); this resolves the intraday boundary, which the

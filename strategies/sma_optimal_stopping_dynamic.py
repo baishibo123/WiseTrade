@@ -1,4 +1,4 @@
-# strategies/sma_os_dynamic.py
+# strategies/sma_optimal_stopping_dynamic.py
 
 """
 SMA Optimal Stopping Strategy - Dynamic Window

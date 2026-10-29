@@ -1,4 +1,4 @@
-# strategies/examples/simple_sma.py
+# strategies/price_sma_cross.py
 
 """
 Simple SMA Crossover Strategy for testing

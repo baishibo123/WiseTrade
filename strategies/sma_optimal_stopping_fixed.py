@@ -1,4 +1,4 @@
-# strategies/sma_os_fixed.py
+# strategies/sma_optimal_stopping_fixed.py
 
 """
 SMA Optimal Stopping Strategy - Fixed Window

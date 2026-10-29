@@ -16,8 +16,8 @@ from itertools import product
 from pathlib import Path
 from typing import Any, Optional, Sequence, Type, Union
 
-from core.batch.orchestrator import BatchRunner, make_batch_dir
-from core.batch.types import BatchTask, compute_run_id
+from core.batch.batch_runner import BatchRunner, make_batch_dir
+from core.batch.worker_contract import BatchTask, compute_run_id
 
 
 StrategySpec = tuple[Type, dict]  # (StrategyClass, {"param_grid": ..., "param_list": ...})

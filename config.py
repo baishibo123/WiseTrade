@@ -14,10 +14,10 @@ import os
 # "read from the environment", never "branch on the OS".
 
 PROJECT_ROOT = Path(__file__).parent
-DB_DIR = PROJECT_ROOT / "db"
+DB_DIR = PROJECT_ROOT / "data"
 RESULTS_DIR = PROJECT_ROOT / "results"
 # One database. Split adjustment is a view over immutable raw bars
-# (database/adjustments.py), so there is no separate "adjusted" file to keep in
+# (database/split_adjustments.py), so there is no separate "adjusted" file to keep in
 # sync -- bars, splits, adj_factors and the bars_adjusted view all live here.
 SQLITE_DB_PATH = DB_DIR / "us_market_1min.sqlite"
 

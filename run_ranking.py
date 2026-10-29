@@ -19,8 +19,8 @@ from __future__ import annotations
 from core.batch import PerSymbolBatchConfig
 # SMACrossover and SMA_ATR_Exit still use the old single-symbol API and need
 # migration before they can be batched. Re-add once they're on the new base.
-from strategies.sma_os_dynamic import SMA_OS_Dynamic
-from strategies.sma_os_fixed import SMA_OS_Fixed
+from strategies.sma_optimal_stopping_dynamic import SMA_OS_Dynamic
+from strategies.sma_optimal_stopping_fixed import SMA_OS_Fixed
 
 
 # Date range (Unix milliseconds UTC)

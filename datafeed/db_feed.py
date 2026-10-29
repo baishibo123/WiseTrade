@@ -124,7 +124,7 @@ class DatabaseFeed(BaseFeed):
         self.cursor = self.connection.cursor()
 
         # Never `bars`: split adjustment is a view over immutable raw bars
-        # (database/adjustments.py), so reading the base table silently yields
+        # (database/split_adjustments.py), so reading the base table silently yields
         # unadjusted prices -- NVDA drops 10x on 2024-06-10 and every metric
         # spanning that date is wrong. bars_rth layers the regular-hours filter
         # on top of the adjusted view (database/sessions.py), so it is never

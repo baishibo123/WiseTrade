@@ -1,7 +1,7 @@
 """
 Acceptance tests for `database/resample.py` and the `/bars` routes.
 
-Run:  python scripts/test_resample.py
+Run:  python scripts/acceptance_resample.py
 
 Plain asserts and a `main()` rather than pytest, because the repo declares no
 test tooling and `tests/` is gitignored -- these are acceptance criteria and have

@@ -13,8 +13,8 @@ still take __init__(self, params) and would raise on construction.
 import logging
 
 from core.engine import Engine
-from strategies.sma_os_fixed import SMA_OS_Fixed
-from strategies.sma_os_dynamic import SMA_OS_Dynamic
+from strategies.sma_optimal_stopping_fixed import SMA_OS_Fixed
+from strategies.sma_optimal_stopping_dynamic import SMA_OS_Dynamic
 
 logging.basicConfig(level=logging.INFO, format="%(levelname)s: %(message)s")
 
