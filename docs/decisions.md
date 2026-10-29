@@ -425,3 +425,24 @@ Neither ticker spans the window. Backtesting `FI` over 2025-07-02 → 2025-11-25
 **Why `split_ingest` and not `split_adjustments`.** Loading `splits.csv` is ingest, like loading the bar CSVs; deriving `adj_factors` and the adjusted view from the `splits` table is adjustment. Keeping them apart means the timezone decision for split boundaries still lives in exactly one module (`database/split_adjustments.py`).
 
 **Known residue:** a leftover `datafeed/__pycache__/` on any machine makes `import datafeed` succeed as a namespace package. Delete the directory after pulling.
+
+---
+
+## ADR-034: Code-motion layer after the renames; only strategy class names are frozen (amends ADR-032)
+
+**Decided:**
+
+| Change | Where | Why |
+|---|---|---|
+| `database/schema.py` → `database/bar_record.py` | — | closes ADR-032's known gap: once the DDL left, the file holds only the `Bar` namedtuple |
+| `SQLITE_CREATE_TABLE` moves into `database/ingest.py` | from `database/schema.py` | the ingest is the only reader; the DDL now sits beside the code that executes it |
+| `TECH_100` moves to `database/universes.py` | from `database/ingest.py` | resolving a universe name for a backtest no longer depends on the CSV loader |
+| `core/signal_specification.md` deleted | — | nothing referenced it, and the signal format is already stated in `CLAUDE.md` and `README.md` |
+| `config.py`'s *Backtesting Defaults* and Mongo constants deleted | — | flagged UNREFERENCED in the file itself, and verified unreferenced on `main` and on the open `label-store` branch; the values `Engine` uses live in `core/engine.py` and `portfolio_config` |
+| the commented-out MongoDB document layout deleted | from `database/schema.py` | describes storage that does not exist, and the constants it went with are gone |
+
+ADR-032's rule that class names never change is narrowed to **strategy** classes. `compute_run_id` hashes `strategy_class.__name__` and nothing else by name, so renaming `SQLiteDatabase`, `DatabaseFeed` or any other non-strategy class affects no `run_id`. Renaming a strategy class still orphans its committed results, and that rule is now an invariant in `CLAUDE.md`.
+
+**Alternatives:** Name the record module `database/minute_bar.py` to tell it apart from the API's aggregated `Bar` payload in `docs/interfaces.md`, or move it to `core/bar.py` as the engine's event type. `bar_record` was kept. The two `Bar`s remain distinct by module: the namedtuple is a 1-minute row from `bars_adjusted`, and the payload is a dict built in `database/resample.py`. Keep the Backtesting Defaults and make `Engine` read them — rejected for now because it changes behaviour, which this layer does not.
+
+**Why one layer for all of it.** Each item moves or deletes code without changing what any code path computes, so the failure modes are the same two: a stale import, which fails at import time, and a deleted name someone still reads, which also fails at import time.

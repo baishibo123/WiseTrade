@@ -249,6 +249,10 @@ changes results — a bar filter, the data itself — must enter the hash or be 
 known gap (ADR-022). The hash has historically covered *strategy* inputs well and
 *environment* inputs badly; check new ones by reflex.
 
+**Strategy class names are part of `run_id`.** `compute_run_id` hashes
+`strategy_class.__name__`, so renaming a strategy class orphans every committed result for
+it (ADR-034). Module paths and every other class name can change freely.
+
 **Bump `VERSION` on a strategy whenever its behavior changes**, including bug fixes and
 changed hardcoded constants (ADR-004). Forgetting silently reuses results produced by code
 that no longer exists; bumping unnecessarily costs one recomputation. Err toward bumping.
@@ -301,7 +305,7 @@ unadjusted prices — NVDA drops 10× on 2024-06-10 and every metric spanning th
 - `validate_adjustments()` is the backstop: it compares adjusted closes across every split
   boundary. Ratio ≈ 1 is correct, ≈ 1/factor means unadjusted, ≈ factor means double-adjusted.
 - **Prod:** PostgreSQL is supported in `DatabaseFeed` via `WISETRADE_DB_TYPE=postgresql`.
-- **Universe:** `TECH_100` in `database/ingest.py`.
+- **Universe:** `TECH_100` in `database/universes.py`.
 
 ### Known data caveats
 
