@@ -9,7 +9,7 @@ adjuster then applied each one twice, turning NVDA's 1:10 into 1:100 with no
 warning anywhere.
 
 Dates are stored exactly as published (YYYY-MM-DD). Converting to an instant is
-database/adjustments.py's job, so the timezone decision lives in one place.
+database/split_adjustments.py's job, so the timezone decision lives in one place.
 """
 
 import csv
@@ -19,7 +19,7 @@ from pathlib import Path
 
 
 def load_splits_csv_to_db(csv_path: str, db_path: str) -> int:
-    from database.adjustments import SPLITS_SCHEMA
+    from database.split_adjustments import SPLITS_SCHEMA
 
     conn = sqlite3.connect(db_path)
     conn.executescript(SPLITS_SCHEMA)

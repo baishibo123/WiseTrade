@@ -24,7 +24,7 @@ from pathlib import Path
 from typing import Optional
 
 from core.batch.atomic_io import atomic_write_json
-from core.batch.types import BatchTask, RunResult
+from core.batch.worker_contract import BatchTask, RunResult
 from core.batch.worker import run_one, worker_init
 
 

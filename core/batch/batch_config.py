@@ -16,8 +16,8 @@ from itertools import product
 from pathlib import Path
 from typing import Any, Optional, Sequence, Type, Union
 
-from core.batch.orchestrator import BatchRunner, make_batch_dir
-from core.batch.types import BatchTask, compute_run_id
+from core.batch.batch_runner import BatchRunner, make_batch_dir
+from core.batch.worker_contract import BatchTask, compute_run_id
 
 
 StrategySpec = tuple[Type, dict]  # (StrategyClass, {"param_grid": ..., "param_list": ...})
@@ -31,7 +31,7 @@ UniverseSpec = Union[str, Sequence[str]]
 def _resolve_universe(spec: UniverseSpec) -> list[str]:
     """Accept a list of symbols or a named-universe string."""
     if isinstance(spec, str):
-        from database.sqlite_db import TECH_100
+        from database.ingest import TECH_100
         named = {"TECH_100": list(TECH_100)}
         if spec not in named:
             raise ValueError(f"Unknown named universe: {spec!r}. Known: {list(named)}")

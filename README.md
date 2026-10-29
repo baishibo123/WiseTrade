@@ -231,7 +231,7 @@ python tests/diagnose_bar_gaps.py
 python tests/test_end_to_end.py
 
 # 3. Run custom backtest
-python run.py  # Or create custom script using Engine API
+python run_single_symbol.py  # Or create custom script using Engine API
 ```
 
 ---
@@ -257,7 +257,7 @@ python run.py  # Or create custom script using Engine API
 
 ## Critical Files
 
-**Core Logic:** `core/engine.py`, `core/portfolio.py`, `core/time_iterator.py`  
+**Core Logic:** `core/engine.py`, `core/portfolio.py`, `core/time_aligned_iterator.py`  
 **Strategy Framework:** `strategies/base.py`, `strategies/indicators.py`  
 **Data Access:** `datafeed/db_feed.py`  
 **Utilities:** `utils/adjust_database_sql.py`, `utils/load_splits_to_db.py`  

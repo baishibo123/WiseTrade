@@ -87,7 +87,7 @@ pathing here means deriving from `PROJECT_ROOT` or reading the environment.
 |---|---|
 | `WISETRADE_RAW_DATA_ROOT` | Root of the raw 1-minute CSV tree (ingest only) |
 | `WISETRADE_SPLITS_CSV` | Corporate-splits CSV (ingest only) |
-| `WISETRADE_SQLITE_DB_PATH` | Override the bar database; defaults to `db/` under the repo |
+| `WISETRADE_SQLITE_DB_PATH` | Override the bar database; defaults to `data/` under the repo |
 | `WISETRADE_DB_TYPE` | `sqlite` (default) or `postgresql` |
 | `WISETRADE_MP_START_METHOD` | `spawn` (default) or `fork` — see ADR-015 |
 
@@ -102,7 +102,7 @@ python utils/build_database.py --all      # every symbol in the CSV tree
 python utils/build_database.py --skip-bars  # rebuild only splits/factors
 
 # One symbol, one strategy at a time, with a full summary
-python run.py
+python run_single_symbol.py
 
 # Batch backtest across TECH_100, per-symbol mode
 # Output: results/<batch_id>/ with runs/, curves/, manifest.json, errors.log
@@ -223,7 +223,7 @@ definitions.
 **Date boundaries are exchange-local, never UTC.** A trading day is a property of
 `America/New_York`, so any conversion from a calendar date to an instant must go through
 the exchange timezone. Midnight UTC is 19:00–20:00 ET on the *previous* day — inside the
-prior session. This is why split boundaries use ET midnight (`database/adjustments.py`).
+prior session. This is why split boundaries use ET midnight (`database/split_adjustments.py`).
 
 **Bar counts are not uniformly interchangeable with durations.** Three distinct cases:
 
@@ -301,7 +301,7 @@ unadjusted prices — NVDA drops 10× on 2024-06-10 and every metric spanning th
 - `validate_adjustments()` is the backstop: it compares adjusted closes across every split
   boundary. Ratio ≈ 1 is correct, ≈ 1/factor means unadjusted, ≈ factor means double-adjusted.
 - **Prod:** PostgreSQL is supported in `DatabaseFeed` via `WISETRADE_DB_TYPE=postgresql`.
-- **Universe:** `TECH_100` in `database/sqlite_db.py`.
+- **Universe:** `TECH_100` in `database/ingest.py`.
 
 ### Known data caveats
 

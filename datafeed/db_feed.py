@@ -99,7 +99,7 @@ class DatabaseFeed(BaseFeed):
             raise FileNotFoundError(
                 f"Bar database not found: {db_path}\n"
                 "Check config.SQLITE_DB_PATH, or build the database with "
-                "database/sqlite_db.py."
+                "database/ingest.py."
             )
 
         # Read-only. Batch workers only ever SELECT, and making that structural
@@ -124,7 +124,7 @@ class DatabaseFeed(BaseFeed):
         self.cursor = self.connection.cursor()
 
         # Never `bars`: split adjustment is a view over immutable raw bars
-        # (database/adjustments.py), so reading the base table silently yields
+        # (database/split_adjustments.py), so reading the base table silently yields
         # unadjusted prices -- NVDA drops 10x on 2024-06-10 and every metric
         # spanning that date is wrong. bars_rth layers the regular-hours filter
         # on top of the adjusted view (database/sessions.py), so it is never

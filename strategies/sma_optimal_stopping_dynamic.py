@@ -1,27 +1,26 @@
-# strategies/examples/sma_os_fixed.py
+# strategies/sma_optimal_stopping_dynamic.py
 
 """
-SMA Optimal Stopping Strategy - Fixed Window
+SMA Optimal Stopping Strategy - Dynamic Window
 
 Entry: SMA(10) > SMA(20) [Fresh Cross]
-Exit: Optimal Stopping with Fixed Window (N=390 bars)
+Exit: Optimal Stopping with Dynamic Window based on time until market close
 """
 
 from typing import Dict, Optional
+from datetime import datetime, timezone
 from database.schema import Bar
 from strategies.base import Strategy
 from strategies.indicators import calculate_sma
 
 
-class SMA_OS_Fixed(Strategy):
+class SMA_OS_Dynamic(Strategy):
     """
     Entry: SMA(10) > SMA(20) [Fresh Cross]
-    Exit: Optimal Stopping with Fixed Window (N=390 bars = 1 trading day)
+    Exit: Optimal Stopping with Dynamic Window
 
-    Phases:
-    - Observation (37% of window): Track max price
-    - Selection (63% of window): Sell when price beats observation max
-    - Time limit: Force exit after N bars
+    Window dynamically calculated as: minutes remaining until market close
+    Only enters trades if >= 30 minutes remain in trading day
     """
 
     # Bumped from the inherited 1.0 at the point the batch layer became
@@ -38,8 +37,10 @@ class SMA_OS_Fixed(Strategy):
         self.fast_period = self.params.get('fast_period', 10)
         self.slow_period = self.params.get('slow_period', 20)
 
-        # Exit parameters (Optimal Stopping)
-        self.window_n = self.params.get('window_n', 390)  # 1 trading day (6.5 hours)
+        # No market_close_hour_utc parameter any more: the close is a property
+        # of the session, not a constant. self.calendar (injected by Engine)
+        # knows the real close, including early closes, and is DST-correct.
+
         # Fraction of the window spent observing before the strategy will
         # accept anything. 0.37 is 1/e, the classical secretary-problem
         # threshold -- optimal only under that problem's assumptions (no
@@ -47,15 +48,18 @@ class SMA_OS_Fixed(Strategy):
         # Intraday price paths satisfy none of those, so the value is a
         # hypothesis, not a constant. Exposed so it can be swept.
         self.observation_ratio = self.params.get('observation_ratio', 0.37)
-        self.observation_idx = int(self.window_n * self.observation_ratio)
+
+        # Minimum minutes required to enter trade
+        self.min_minutes_to_trade = self.params.get('min_minutes_to_trade', 30)
 
         # Per-symbol state tracking
         self._state = {
             symbol: {
+                'window_n': 0,
+                'observation_idx': 0,
                 'bars_held': 0,
                 'max_price_obs': 0.0,
-                'prev_bullish': False,
-                'entry_bar_idx': None
+                'prev_bullish': False
             }
             for symbol in universe
         }
@@ -69,7 +73,7 @@ class SMA_OS_Fixed(Strategy):
 
     def next(self, bars: Dict[str, Bar]) -> Dict[str, dict]:
         """
-        Generate signals for all symbols based on SMA crossover + Optimal Stopping
+        Generate signals based on SMA crossover + Dynamic Optimal Stopping
         """
         signals = {}
 
@@ -78,7 +82,6 @@ class SMA_OS_Fixed(Strategy):
             sma_fast = self._indicators[symbol].get('sma_fast')
             sma_slow = self._indicators[symbol].get('sma_slow')
 
-            # Skip if not enough data
             if sma_fast is None or sma_slow is None:
                 continue
 
@@ -97,27 +100,26 @@ class SMA_OS_Fixed(Strategy):
 
                 should_exit = False
 
-                # Phase A: Observation (first 37% of window)
-                if state['bars_held'] <= self.observation_idx:
+                # Phase A: Observation
+                if state['bars_held'] <= state['observation_idx']:
                     if bar.close > state['max_price_obs']:
                         state['max_price_obs'] = bar.close
 
-                # Phase B: Selection (remaining 63%)
-                elif state['bars_held'] <= self.window_n:
-                    # Sell if price beats observation benchmark
+                # Phase B: Selection
+                elif state['bars_held'] <= state['window_n']:
+                    # Sell if price beats benchmark
                     if bar.close > state['max_price_obs']:
                         should_exit = True
 
-                # Phase C: Time limit reached (force exit)
-                if state['bars_held'] >= self.window_n:
+                # Phase C: Time limit
+                if state['bars_held'] >= state['window_n']:
                     should_exit = True
 
                 if should_exit:
                     signals[symbol] = {
                         "action": "SELL",
-                        "score": 1.0  # High confidence exit
+                        "score": 1.0
                     }
-                    # Reset state will happen after exit
                     self._reset_state(symbol)
 
             # ================================================================
@@ -129,23 +131,51 @@ class SMA_OS_Fixed(Strategy):
 
                 # Check for FRESH crossover
                 if is_bullish and not state['prev_bullish']:
-                    signals[symbol] = {
-                        "action": "BUY",
-                        "score": 0.8,
-                        "quantity": 100.0  # Fixed 100 shares
-                    }
+                    # Calculate dynamic window
+                    minutes_remaining = self._get_minutes_to_close(bar.datetime)
 
-                    # Initialize exit state
-                    state['bars_held'] = 0
-                    state['max_price_obs'] = bar.close
+                    # Only trade if enough time remains
+                    if minutes_remaining >= self.min_minutes_to_trade:
+                        signals[symbol] = {
+                            "action": "BUY",
+                            "score": 0.8,
+                            "quantity": 100.0
+                        }
 
-                # Update state for next iteration
+                        # Set dynamic window parameters
+                        state['window_n'] = minutes_remaining
+                        state['observation_idx'] = int(state['window_n'] * self.observation_ratio)
+                        state['bars_held'] = 0
+                        state['max_price_obs'] = bar.close
+
+                # Update state
                 state['prev_bullish'] = is_bullish
 
         return signals
 
+    def _get_minutes_to_close(self, timestamp_ms: int) -> int:
+        """
+        Calculate minutes remaining until market close
+
+        Args:
+            timestamp_ms: Current bar timestamp (Unix milliseconds UTC)
+
+        Returns:
+            Minutes until market close (0 if already past close)
+        """
+        if self.calendar is None:
+            # No sessions derived; fall back to "plenty of time left" rather
+            # than inventing a close. Loud enough to notice in a backtest that
+            # never exits on the time criterion.
+            return 60
+        remaining = self.calendar.minutes_to_close(timestamp_ms)
+        return 60 if remaining is None else remaining
+
     def _reset_state(self, symbol: str):
         """Reset tracking state for a symbol"""
-        self._state[symbol]['bars_held'] = 0
-        self._state[symbol]['max_price_obs'] = 0.0
-        self._state[symbol]['prev_bullish'] = False
+        state = self._state[symbol]
+        state['window_n'] = 0
+        state['observation_idx'] = 0
+        state['bars_held'] = 0
+        state['max_price_obs'] = 0.0
+        state['prev_bullish'] = False

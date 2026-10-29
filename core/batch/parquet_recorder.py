@@ -12,7 +12,7 @@ import os
 from pathlib import Path
 from typing import Iterable, Sequence
 
-from core.recorder import CurveRecorder
+from core.curve_recorder import CurveRecorder
 
 
 EQUITY_COLUMNS = ["timestamp", "equity", "cash", "positions_value", "num_positions"]

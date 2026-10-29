@@ -7,8 +7,8 @@ Public surface:
     - compute_run_id: deterministic hash for resumability
 """
 
-from core.batch.types import BatchTask, RunResult, compute_run_id
-from core.batch.config import PortfolioBatchConfig, PerSymbolBatchConfig
+from core.batch.worker_contract import BatchTask, RunResult, compute_run_id
+from core.batch.batch_config import PortfolioBatchConfig, PerSymbolBatchConfig
 
 __all__ = [
     "BatchTask",

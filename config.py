@@ -14,10 +14,10 @@ import os
 # "read from the environment", never "branch on the OS".
 
 PROJECT_ROOT = Path(__file__).parent
-DB_DIR = PROJECT_ROOT / "db"
+DB_DIR = PROJECT_ROOT / "data"
 RESULTS_DIR = PROJECT_ROOT / "results"
 # One database. Split adjustment is a view over immutable raw bars
-# (database/adjustments.py), so there is no separate "adjusted" file to keep in
+# (database/split_adjustments.py), so there is no separate "adjusted" file to keep in
 # sync -- bars, splits, adj_factors and the bars_adjusted view all live here.
 SQLITE_DB_PATH = DB_DIR / "us_market_1min.sqlite"
 
@@ -35,7 +35,7 @@ def ensure_dirs() -> None:
     Create the project's output directories. Call from entry points.
 
     Deliberately NOT done at import time: config is imported transitively by
-    every batch worker (run_ranking -> core.batch.config -> database.sqlite_db
+    every batch worker (run_ranking -> core.batch.batch_config -> database.ingest
     -> config), so an import-time mkdir means N worker processes doing
     filesystem work on startup for no reason.
     """

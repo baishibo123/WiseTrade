@@ -12,7 +12,7 @@ from database.schema import Bar
 from strategies.base import Strategy
 from core.portfolio import Portfolio
 from core.analyzer import Analyzer
-from core.time_iterator import TimeAlignedIterator
+from core.time_aligned_iterator import TimeAlignedIterator
 
 
 class Engine:

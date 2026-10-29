@@ -371,3 +371,37 @@ Neither ticker spans the window. Backtesting `FI` over 2025-07-02 → 2025-11-25
 **Known limitation:** the SQL is SQLite-specific in two ways — two-argument `MAX`/`MIN` (`GREATEST`/`LEAST` in PostgreSQL) and `CROSS JOIN` as a join-order hint, which PostgreSQL does not honour. `DatabaseFeed` supports PostgreSQL and this module does not; the service reads SQLite only. Recorded rather than abstracted, because a portability layer written before the second backend exists would be guessing at it.
 
 **The generalisable half of this is not an ADR** and is recorded as a NOTE in `docs/principles.md`: the cost of a query is a property of its plan, and the plan is not always visible in the plan output either — `SELECT DISTINCT symbol` and `SELECT symbol … GROUP BY symbol` produce identical `EXPLAIN QUERY PLAN` text and measure 0.3 ms against 503 ms on the same 25.5M rows.
+
+---
+
+## ADR-032: Module filenames say what the file holds, and each is unique in the repository
+
+**Decided:** Every filename appears once in the repository and names its contents. Modules are renamed to meet that; **class names are not changed**. This entry is the old-to-new path map — earlier ADRs are append-only and keep the paths that were true when they were written, so a path cited there is resolved here.
+
+| Old path | New path | Why |
+|---|---|---|
+| `core/batch/config.py` | `core/batch/batch_config.py` | collided with the root `config.py`; holds the two `*BatchConfig` types |
+| `core/recorder.py` | `core/curve_recorder.py` | the interface: `CurveRecorder`, `NullRecorder` |
+| `core/batch/recorder.py` | `core/batch/parquet_recorder.py` | the implementation: `ParquetEquityRecorder` |
+| `database/sqlite_db.py` | `database/ingest.py` | what it actually does is CSV ingest |
+| `strategies/BuyAndHold.py` | `strategies/buy_and_hold.py` | snake_case; class `BuyAndHold` unchanged |
+| `strategies/SMA_OS_Fixed.py` | `strategies/sma_optimal_stopping_fixed.py` | snake_case, and "os" spelled out (it read as operating system); class `SMA_OS_Fixed` unchanged |
+| `strategies/SMA_OS_dynamic.py` | `strategies/sma_optimal_stopping_dynamic.py` | as above; class `SMA_OS_Dynamic` unchanged |
+| `strategies/simple_sma.py` | `strategies/price_sma_cross.py` | both SMA strategies are crossovers; this one is close crossing one SMA. Class `SimpleSMA` unchanged |
+| `strategies/sma_crossover.py` | `strategies/sma_fast_slow_cross.py` | the other one: fast SMA crossing slow SMA. Class `SMACrossover` unchanged |
+| `core/batch/types.py` | `core/batch/worker_contract.py` | `BatchTask`, `RunResult` and `compute_run_id` — named for the contract its docstring describes; `types` also shadowed the stdlib module for a script run from that directory |
+| `core/batch/orchestrator.py` | `core/batch/batch_runner.py` | holds `BatchRunner` |
+| `core/time_iterator.py` | `core/time_aligned_iterator.py` | holds `TimeAlignedIterator` |
+| `database/adjustments.py` | `database/split_adjustments.py` | splits only; dividend adjustment is not done here (and is unverified upstream) |
+| `run.py` | `run_single_symbol.py` | one symbol, every listed strategy, full summary — the counterpart of `run_ranking.py` |
+| `scripts/test_resample.py` | `scripts/acceptance_resample.py` | a `main()`-driven acceptance script, not a pytest module; a `test_` prefix would get it collected, and its `test_*(cal)` functions would then fail on a missing fixture |
+| `db/` (default database directory) | `data/` | `db/` and `database/` were near-synonyms, the same problem as `datafeed/`. Not code: the existing database file has to be moved on each machine, or `WISETRADE_SQLITE_DB_PATH` set |
+| `database/labels.py` (planned, never created) | `database/label_store.py` | would collide with `api/routers/labels.py`; routers are named for their URL domain and stay as they are |
+
+**Alternatives:** Rename classes alongside modules for full consistency; leave the names and rely on directory context to disambiguate.
+
+**Why modules and not classes.** `run_id` hashes `strategy_class.__name__` (`compute_run_id` in `core/batch/worker_contract.py`), not the module path, so a module rename leaves every committed result reusable under ADR-021. A class rename would change every `run_id` and silently force a full recomputation. The module path is used only at run time, where `spawn` pickles a strategy class by qualified name; nothing persisted in `results/` records it.
+
+**Why rename-only.** The rename lands on its own branch with no code moved, so it introduces exactly one failure mode — a stale import, which fails loudly at import time. Merging `datafeed/` into `database/` and `utils/` into `scripts/` moves code and is a separate, later layer.
+
+**Known gap:** `database/schema.py` is *not* renamed here. It holds the `Bar` namedtuple **and** the `bars` table DDL (`SQLITE_CREATE_TABLE`, used by the ingest to create the table), so a name describing only the record would be wrong. It is renamed when the DDL moves next to the ingest, which is code motion and belongs to the merge layer.

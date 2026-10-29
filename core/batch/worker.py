@@ -19,8 +19,8 @@ from pathlib import Path
 from typing import Any
 
 from core.batch.atomic_io import atomic_write_json
-from core.batch.recorder import ParquetEquityRecorder
-from core.batch.types import BatchTask, RunResult
+from core.batch.parquet_recorder import ParquetEquityRecorder
+from core.batch.worker_contract import BatchTask, RunResult
 
 
 def worker_init(log_queue) -> None:
