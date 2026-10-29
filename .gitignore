@@ -12,3 +12,7 @@ context.txt
 
 # macOS finder metadata (appears now that the repo is used on a Mac)
 .DS_Store
+
+# Labels are private and irreplaceable; the store lives outside the repo
+# (WISETRADE_LABELS_DIR, ADR-027). This guards against a copy landing here.
+labels/
