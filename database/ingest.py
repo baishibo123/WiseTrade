@@ -8,39 +8,26 @@ from tqdm import tqdm
 import logging
 
 from config import RAW_DATA_ROOT, SQLITE_DB_PATH, require_raw_data_root
-from .bar_record import SQLITE_CREATE_TABLE, Bar
+from .universes import TECH_100
 
-# ----------------------------------------------------------------------
-# Your exact TECH_100 universe — only these symbols will be loaded
-# ----------------------------------------------------------------------
-TECH_100 = {
-    # Giants (Mag 7 + Big Tech)
-    "AAPL", "MSFT", "GOOGL", "GOOG", "AMZN", "NVDA", "META", "TSLA",
-    # Semiconductors
-    "AVGO", "AMD", "QCOM", "TXN", "MU", "AMAT", "LRCX", "ADI", "KLAC",
-    "MRVL", "NXPI", "MCHP", "ON", "GFS", "ARM", "INTC", "TSM", "ASML",
-    "STM", "TER", "ENTG", "SWKS", "QRVO", "WOLF", "LSCC",
-    # Software / SaaS / Cloud
-    "CRM", "ADBE", "ORCL", "INTU", "NOW", "IBM", "WDAY", "SNPS", "CDNS",
-    "ADSK", "PANW", "FTNT", "CRWD", "PLTR", "DDOG", "ZS", "ANET", "TEAM",
-    "HUBS", "NET", "DOCU", "OKTA", "MDB", "DT", "ZM", "SSNC", "TYL",
-    "PTC", "GEN", "CHKP", "AKAM", "CFLT", "GTLB", "PATH", "SNOW", "TWLO",
-    "PCTY", "PAYC", "MANH", "OTEX",
-    # Internet / E-commerce / Apps
-    "NFLX", "BKNG", "ABNB", "UBER", "DASH", "SHOP", "MELI", "PDD", "JD",
-    "BABA", "EBAY", "ETSY", "LYFT", "SNAP", "PINS", "RBLX", "DKNG", "HOOD",
-    "COIN", "TTD", "APP", "DUOL", "Z",
-    # Hardware / Networking
-    "CSCO", "DELL", "HPQ", "HPE", "GLW", "STX", "WDC", "NTAP", "SMCI",
-    "PSTG", "IONQ",
-    # Fintech / Payments
-    # Fiserv trades as FI through 2025-10-31 and as FISV from 2025-11-11, with
-    # six sessions where neither ticker has data. FI is listed because it covers
-    # 478 sessions against FISV's 13, but neither alone spans the window -- see
-    # ADR-024. A backtest ending after 2025-10-31 will report reduced session
-    # coverage for this symbol, which is correct rather than a bug.
-    "V", "MA", "PYPL", "FIS", "FI", "GPN", "AFRM", "TOST"
-}
+# The bars table this module writes; bars_adjusted (database/split_adjustments.py)
+# is the view everything else reads.
+SQLITE_CREATE_TABLE = """
+CREATE TABLE IF NOT EXISTS bars (
+    symbol      TEXT    NOT NULL,
+    datetime    INTEGER NOT NULL,       -- Unix milliseconds UTC
+    open        REAL    NOT NULL,
+    high        REAL    NOT NULL,
+    low         REAL    NOT NULL,
+    close       REAL    NOT NULL,
+    volume      REAL    NOT NULL,
+
+    PRIMARY KEY (symbol, datetime)
+);
+
+-- Index for super-fast range queries (this is the magic for speed)
+CREATE INDEX IF NOT EXISTS idx_symbol_time ON bars(symbol, datetime);
+"""
 
 
 class SQLiteDatabase:

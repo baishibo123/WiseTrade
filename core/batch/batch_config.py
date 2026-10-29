@@ -31,7 +31,7 @@ UniverseSpec = Union[str, Sequence[str]]
 def _resolve_universe(spec: UniverseSpec) -> list[str]:
     """Accept a list of symbols or a named-universe string."""
     if isinstance(spec, str):
-        from database.ingest import TECH_100
+        from database.universes import TECH_100
         named = {"TECH_100": list(TECH_100)}
         if spec not in named:
             raise ValueError(f"Unknown named universe: {spec!r}. Known: {list(named)}")
