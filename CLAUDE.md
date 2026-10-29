@@ -97,9 +97,9 @@ Dependencies are declared in `pyproject.toml`; Python ≥ 3.12.
 
 ```bash
 # Build the bar database: CSV -> bars, splits -> adj_factors -> validate
-python utils/build_database.py            # TECH_100
-python utils/build_database.py --all      # every symbol in the CSV tree
-python utils/build_database.py --skip-bars  # rebuild only splits/factors
+python scripts/build_database.py            # TECH_100
+python scripts/build_database.py --all      # every symbol in the CSV tree
+python scripts/build_database.py --skip-bars  # rebuild only splits/factors
 
 # One symbol, one strategy at a time, with a full summary
 python run_single_symbol.py

@@ -151,7 +151,7 @@ def derive_sessions(conn: sqlite3.Connection, validate_against: Optional[str] = 
     if not by_date:
         raise ValueError(
             "derive_sessions: the bars table is empty, so no sessions can be derived. "
-            "Ingest bars before deriving sessions (utils/build_database.py). Writing an "
+            "Ingest bars before deriving sessions (scripts/build_database.py). Writing an "
             "empty sessions table would leave bars_rth silently returning nothing."
         )
 

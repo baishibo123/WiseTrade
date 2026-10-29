@@ -2,7 +2,7 @@
 Build the bar database end to end.
 
     raw CSVs ──► bars          (database/ingest.py)
-    splits.csv ─► splits       (utils/load_splits_to_db.py)
+    splits.csv ─► splits       (database/split_ingest.py)
                   adj_factors  ┐
                   bars_adjusted├─ (database/split_adjustments.py)
                                ┘
@@ -11,8 +11,8 @@ applied splits with an in-place UPDATE. That needed 2x disk, rewrote every
 touched row, and could double-adjust silently if pointed at its own output.
 Adjustment is now derived, so none of those failure modes exist.
 
-    python utils/build_database.py            # TECH_100
-    python utils/build_database.py --all      # every symbol in the CSV tree
+    python scripts/build_database.py            # TECH_100
+    python scripts/build_database.py --all      # every symbol in the CSV tree
 """
 
 import argparse
@@ -27,7 +27,7 @@ from config import SQLITE_DB_PATH, require_splits_csv          # noqa: E402
 from database.split_adjustments import build_adj_factors, validate_adjustments  # noqa: E402
 from database.sessions import derive_sessions  # noqa: E402
 from database.ingest import SQLiteDatabase                      # noqa: E402
-from utils.load_splits_to_db import load_splits_csv_to_db       # noqa: E402
+from database.split_ingest import load_splits_csv_to_db         # noqa: E402
 
 
 def main() -> int:

@@ -99,7 +99,7 @@ class DatabaseFeed(BaseFeed):
             raise FileNotFoundError(
                 f"Bar database not found: {db_path}\n"
                 "Check config.SQLITE_DB_PATH, or build the database with "
-                "database/ingest.py."
+                "scripts/build_database.py."
             )
 
         # Read-only. Batch workers only ever SELECT, and making that structural
@@ -141,7 +141,7 @@ class DatabaseFeed(BaseFeed):
             if not n_sessions:
                 raise RuntimeError(
                     f"{db_path}: the sessions table is empty, so the regular-hours view "
-                    "bars_rth matches nothing. Run utils/build_database.py to derive "
+                    "bars_rth matches nothing. Run scripts/build_database.py to derive "
                     "sessions, or pass regular_hours_only=False to read all hours."
                 )
         self.cursor.execute(f"""

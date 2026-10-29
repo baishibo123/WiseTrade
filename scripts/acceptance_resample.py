@@ -421,7 +421,7 @@ def test_review_regressions(conn, cal: TradingCalendar) -> None:
 def main() -> int:
     if not SQLITE_DB_PATH.exists():
         print(f"bar database not found at {SQLITE_DB_PATH}\n"
-              f"set WISETRADE_SQLITE_DB_PATH, or build it with utils/build_database.py",
+              f"set WISETRADE_SQLITE_DB_PATH, or build it with scripts/build_database.py",
               file=sys.stderr)
         return 2
     conn = sqlite3.connect(f"file:{SQLITE_DB_PATH}?mode=ro", uri=True)

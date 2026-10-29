@@ -7,7 +7,7 @@ from typing import Dict, List, Any, Type, Optional
 import logging
 from datetime import datetime, timezone
 
-from datafeed.db_feed import BaseFeed, DatabaseFeed
+from database.feed import BaseFeed, DatabaseFeed
 from database.schema import Bar
 from strategies.base import Strategy
 from core.portfolio import Portfolio

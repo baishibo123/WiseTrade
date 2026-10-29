@@ -49,7 +49,7 @@ def _connect() -> sqlite3.Connection:
         raise HTTPException(
             503,
             f"bar database not found at {SQLITE_DB_PATH}. Set "
-            f"WISETRADE_SQLITE_DB_PATH, or build it with utils/build_database.py.",
+            f"WISETRADE_SQLITE_DB_PATH, or build it with scripts/build_database.py.",
         )
     return sqlite3.connect(f"file:{SQLITE_DB_PATH}?mode=ro", uri=True)
 
@@ -65,7 +65,7 @@ def _calendar(conn: sqlite3.Connection) -> TradingCalendar:
         if len(loaded) == 0:
             raise HTTPException(
                 503,
-                "sessions table is empty; run utils/build_database.py to derive it.",
+                "sessions table is empty; run scripts/build_database.py to derive it.",
             )
         _CALENDAR = loaded
     return _CALENDAR
