@@ -1,4 +1,4 @@
-# database/sqlite_db.py
+# database/ingest.py
 import sqlite3
 from pathlib import Path
 from typing import Generator, Tuple

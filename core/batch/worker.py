@@ -19,7 +19,7 @@ from pathlib import Path
 from typing import Any
 
 from core.batch.atomic_io import atomic_write_json
-from core.batch.recorder import ParquetEquityRecorder
+from core.batch.parquet_recorder import ParquetEquityRecorder
 from core.batch.types import BatchTask, RunResult
 
 

@@ -3,7 +3,7 @@ from typing import List, Dict, Any, Optional, Tuple
 from datetime import datetime
 import logging
 
-from core.recorder import CurveRecorder, NullRecorder
+from core.curve_recorder import CurveRecorder, NullRecorder
 
 from database.schema import Bar
 

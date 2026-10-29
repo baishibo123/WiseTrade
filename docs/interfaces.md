@@ -98,7 +98,7 @@ answer on both.
 
 ## `Label`
 
-Owned by `database/labels.py`. The schema is deliberately open: a label is a row
+Owned by `database/label_store.py`. The schema is deliberately open: a label is a row
 with a type and a JSON payload, not a boolean column. New label types are added
 without a migration.
 

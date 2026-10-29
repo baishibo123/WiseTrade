@@ -301,7 +301,7 @@ unadjusted prices — NVDA drops 10× on 2024-06-10 and every metric spanning th
 - `validate_adjustments()` is the backstop: it compares adjusted closes across every split
   boundary. Ratio ≈ 1 is correct, ≈ 1/factor means unadjusted, ≈ factor means double-adjusted.
 - **Prod:** PostgreSQL is supported in `DatabaseFeed` via `WISETRADE_DB_TYPE=postgresql`.
-- **Universe:** `TECH_100` in `database/sqlite_db.py`.
+- **Universe:** `TECH_100` in `database/ingest.py`.
 
 ### Known data caveats
 

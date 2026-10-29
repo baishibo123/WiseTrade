@@ -99,7 +99,7 @@ class DatabaseFeed(BaseFeed):
             raise FileNotFoundError(
                 f"Bar database not found: {db_path}\n"
                 "Check config.SQLITE_DB_PATH, or build the database with "
-                "database/sqlite_db.py."
+                "database/ingest.py."
             )
 
         # Read-only. Batch workers only ever SELECT, and making that structural

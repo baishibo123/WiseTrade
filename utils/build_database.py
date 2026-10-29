@@ -1,7 +1,7 @@
 """
 Build the bar database end to end.
 
-    raw CSVs ──► bars          (database/sqlite_db.py)
+    raw CSVs ──► bars          (database/ingest.py)
     splits.csv ─► splits       (utils/load_splits_to_db.py)
                   adj_factors  ┐
                   bars_adjusted├─ (database/adjustments.py)
@@ -26,7 +26,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 from config import SQLITE_DB_PATH, require_splits_csv          # noqa: E402
 from database.adjustments import build_adj_factors, validate_adjustments  # noqa: E402
 from database.sessions import derive_sessions  # noqa: E402
-from database.sqlite_db import SQLiteDatabase                   # noqa: E402
+from database.ingest import SQLiteDatabase                      # noqa: E402
 from utils.load_splits_to_db import load_splits_csv_to_db       # noqa: E402
 
 

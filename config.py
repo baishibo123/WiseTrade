@@ -35,7 +35,7 @@ def ensure_dirs() -> None:
     Create the project's output directories. Call from entry points.
 
     Deliberately NOT done at import time: config is imported transitively by
-    every batch worker (run_ranking -> core.batch.config -> database.sqlite_db
+    every batch worker (run_ranking -> core.batch.batch_config -> database.ingest
     -> config), so an import-time mkdir means N worker processes doing
     filesystem work on startup for no reason.
     """
