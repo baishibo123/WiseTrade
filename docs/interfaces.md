@@ -159,6 +159,13 @@ judged with the pre-market in view is not the same observation once it is cut of
 A stamp that is not a bucket end on its session's grid for the label's `period` and
 `rth` is rejected with 422, never snapped.
 
+**In replay, the chart hides what has not happened yet.** `GET /labels` returns every
+label whose coverage overlaps the window, so an interval that began before the replay
+cursor comes back with its full `t_to_ms` and `cover_to_ms` -- where the judged
+pattern ends. A replaying chart must draw such a label only up to the cursor and must
+not reveal its end, its `payload` or its reviews until the cursor reaches `cover_to_ms`.
+The store does not trim: it serves the record, and the cursor is a property of the view.
+
 **`source` exists for the active-learning loop**: human labels are ground truth,
 model labels are proposals awaiting review. They must never be pooled.
 

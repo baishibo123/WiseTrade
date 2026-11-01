@@ -15,7 +15,8 @@ owns the connection and maps store errors onto HTTP status codes.
 
 from __future__ import annotations
 
-from contextlib import closing
+from contextlib import closing, contextmanager
+from typing import Iterator
 
 from fastapi import APIRouter, HTTPException, Query
 
@@ -28,7 +29,9 @@ from .bars import _calendar, _connect as _connect_bars
 
 router = APIRouter(prefix="/labels", tags=["labels"])
 
-def _open() -> label_store.LabelStore:
+
+@contextmanager
+def _store() -> Iterator[label_store.LabelStore]:
     """
     One store per request: FastAPI runs sync endpoints in a threadpool and
     `sqlite3` connections are not shareable across threads. Opening replays any
@@ -38,11 +41,14 @@ def _open() -> label_store.LabelStore:
     store has no default location by design (ADR-027), and answering `[]` would
     look exactly like "no labels yet". A journal that cannot be replayed is a
     503 for the same reason: serving the stale index would hide it (ADR-028).
+    That holds inside the request too -- a write catches up with lines another
+    process appended since the open, and can meet a bad one there.
     """
     with closing(_connect_bars()) as bars_conn:
         cal = _calendar(bars_conn)
     try:
-        return label_store.LabelStore(cal)
+        with label_store.LabelStore(cal) as store:
+            yield store
     except (RuntimeError, FileNotFoundError) as e:   # JournalError is a RuntimeError
         raise HTTPException(503, str(e)) from None
 
@@ -75,7 +81,7 @@ def list_labels(
     covers minutes before its own `t_ms`, and over-fetching is harmless where
     under-fetching drops a label at the left edge.
     """
-    with _open() as store:
+    with _store() as store:
         return store.query(
             source=source, symbol=symbol, t0_ms=t0_ms, t1_ms=t1_ms,
             period=period, rth=rth, label_type=label_type,
@@ -101,7 +107,7 @@ def create_label(label: dict) -> dict:
     assigned by the store and ignored if sent. A label the store refuses is a
     422 naming the rule it broke.
     """
-    with _open() as store:
+    with _store() as store:
         try:
             return store.insert(label)
         except label_store.LabelError as e:
@@ -119,7 +125,7 @@ def update_label(label_id: int, patch: dict) -> dict:
     `rth` name the bars that were judged, so changing them is a DELETE and a
     POST. The before- and after-image are both journalled (ADR-028).
     """
-    with _open() as store:
+    with _store() as store:
         try:
             return store.update(label_id, patch)
         except label_store.LabelNotFound:
@@ -136,7 +142,7 @@ def delete_label(label_id: int) -> None:
     Not lost: the journal records its before-image, so the deletion is an
     auditable, reversible operation rather than a gap in the history.
     """
-    with _open() as store:
+    with _store() as store:
         try:
             store.delete(label_id)
         except label_store.LabelNotFound:

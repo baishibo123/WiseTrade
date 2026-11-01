@@ -42,6 +42,12 @@ from .sessions import TradingCalendar
 
 LABELS_DB_NAME = "labels.sqlite"
 
+# Version of the index's schema, stored as PRAGMA user_version. Bump it with
+# any change to LABELS_SCHEMA or STATE_SCHEMA: CREATE TABLE IF NOT EXISTS
+# leaves an old table in place, and a mismatched version is what tells the
+# store to set the old index aside and rebuild it from the journal.
+INDEX_VERSION = 1
+
 log = logging.getLogger(__name__)
 
 # Every CHECK guards a structural rule of the frozen `Label` contract. None of
@@ -136,9 +142,15 @@ class LabelStore:
             labels_dir = require_labels_dir()
         self.dir = Path(labels_dir)
         self.cal = cal
-        with label_journal.locked(self.dir):
-            self.conn = self._open_index()
-            self._catch_up()
+        self.conn = sqlite3.connect(self.dir / LABELS_DB_NAME, isolation_level=None)
+        # Every request opens a store, so the common case takes no lock: an
+        # index of the current version that has applied the whole journal is
+        # ready as it is. Anything else -- new lines, a new or stale or
+        # unreadable index -- is settled under the lock.
+        if not self._is_current():
+            with label_journal.locked(self.dir):
+                self._prepare_index()
+                self._catch_up()
 
     def close(self) -> None:
         self.conn.close()
@@ -163,11 +175,15 @@ class LabelStore:
         facts = {k: label.get(k) for k in _FACTS}
         facts["payload"] = label.get("payload", {})
         facts["created_at_ms"] = int(time.time() * 1000)
+        stored: list[dict[str, Any]] = []
+
         def op() -> dict[str, Any]:
             label_id = self._insert_row(None, facts)
+            stored.append(self.get(label_id))
             return {"op": "insert", "at_ms": facts["created_at_ms"], "id": label_id, "label": facts}
 
-        return self.get(self._journalled(op)["id"])
+        self._journalled(op)
+        return stored[0]
 
     def update(self, label_id: int, patch: dict[str, Any]) -> dict[str, Any]:
         """
@@ -188,15 +204,18 @@ class LabelStore:
         if not patch:
             raise LabelError("empty patch")
 
+        stored: list[dict[str, Any]] = []
+
         def op() -> dict[str, Any]:
             before = self._facts(label_id)
             o = {"op": "update", "at_ms": int(time.time() * 1000), "id": label_id,
                  "before": before, "after": before | patch}
             self._apply(o)
+            stored.append(self.get(label_id))
             return o
 
         self._journalled(op)
-        return self.get(label_id)
+        return stored[0]
 
     def delete(self, label_id: int) -> None:
         """
@@ -273,15 +292,18 @@ class LabelStore:
         if not ids:
             raise LabelError("nothing to restore")
 
+        stored: list[dict[str, Any]] = []
+
         def op() -> dict[str, Any]:
             images = self._deleted_images(ids)
             o = {"op": "restore", "at_ms": int(time.time() * 1000),
                  "labels": [{"id": i, "label": images[i]} for i in ids]}
             self._apply(o)
+            stored.extend(self.get(i) for i in ids)
             return o
 
         self._journalled(op)
-        return [self.get(i) for i in ids]
+        return stored
 
     def _journalled(self, make_op) -> Optional[dict[str, Any]]:
         """
@@ -290,6 +312,10 @@ class LabelStore:
         appended and fsynced, and only then committed (ADR-028). Anything raised
         before the append leaves both files untouched. `make_op()` may return
         None when there is nothing to do, and then nothing is journalled.
+
+        A caller that returns the written row reads it inside `make_op()`, i.e.
+        inside the transaction: read after the lock is released, another
+        process could already have changed or deleted it.
         """
         with label_journal.locked(self.dir):
             self._catch_up()          # another process may have written since we opened
@@ -382,48 +408,103 @@ class LabelStore:
         """Say how many live reviews a deletion just left pointing at nothing."""
         if not deleted_ids:
             return
-        marks = ", ".join("?" * len(deleted_ids))
+        # One JSON parameter, not one per id: a batch can exceed SQLite's
+        # bound-variable limit, and this runs after the delete has committed.
         n = self.conn.execute(
-            f"SELECT COUNT(*) FROM labels WHERE label_type = ?"
-            f" AND json_extract(payload, '$.target_id') IN ({marks})",
-            (REVIEW_TYPE, *deleted_ids),
+            "SELECT COUNT(*) FROM labels WHERE label_type = ?"
+            " AND json_extract(payload, '$.target_id') IN (SELECT value FROM json_each(?))",
+            (REVIEW_TYPE, json.dumps(deleted_ids)),
         ).fetchone()[0]
         if n:
             log.warning("deleting %d label(s) orphaned %d review(s); they are kept as "
                         "supervision and re-attach on restore (see orphan_reviews())",
                         len(deleted_ids), n)
 
+    def verify(self) -> dict[str, Any]:
+        """
+        Full check of both files; run it deliberately, not per request.
+
+        Opening a store reads only the journal lines appended since the index
+        last caught up, so damage to already-applied history is invisible there.
+        This reads the whole journal -- every line parsed, `seq` contiguous from
+        1, its end where the index says it is -- and raises JournalError on any
+        disagreement. It also runs `PRAGMA quick_check` on the index, and an
+        index that fails it is set aside and rebuilt from the journal.
+        """
+        with label_journal.locked(self.dir):
+            # Index first: a damaged one cannot be compared against anything.
+            # quick_check reports damage, or raises when it is bad enough.
+            try:
+                ok = self.conn.execute("PRAGMA quick_check").fetchone()[0] == "ok"
+            except sqlite3.DatabaseError:
+                ok = False
+            if not ok:
+                self._set_aside("quick_check failed")
+                self._prepare_index()
+            self._catch_up()
+            ops = label_journal.read_from(self.dir, 0, 0)
+            seq, offset = self._state()
+            last_seq, end = (ops[-1][0]["seq"], ops[-1][1]) if ops else (0, 0)
+            if (last_seq, end) != (seq, offset):
+                raise JournalError(
+                    f"journal ends at seq {last_seq} byte {end} but the index has applied "
+                    f"seq {seq} up to byte {offset}"
+                )
+        return {"operations": len(ops), "seq": seq, "index_rebuilt": not ok}
+
     # -- index maintenance (caller holds the journal lock) ----------------
 
-    def _open_index(self) -> sqlite3.Connection:
-        """
-        Open the index, moving it aside and starting empty if it is damaged.
-
-        Starting empty is safe only because the index is derived: `_catch_up`
-        then replays the whole journal into it. The damaged file is kept, not
-        deleted, in case the journal turns out to be the thing that is wrong.
-        """
-        path = self.dir / LABELS_DB_NAME
-        conn = sqlite3.connect(path, isolation_level=None)
+    def _is_current(self) -> bool:
+        """True when the index is this version and has applied the whole journal."""
         try:
-            ok = conn.execute("PRAGMA quick_check").fetchone()[0] == "ok"
+            if self.conn.execute("PRAGMA user_version").fetchone()[0] != INDEX_VERSION:
+                return False
+            _, offset = self._state()
+        except (sqlite3.DatabaseError, TypeError):   # unreadable, or no state row yet
+            return False
+        return offset == label_journal.size(self.dir)
+
+    def _prepare_index(self) -> None:
+        """
+        Make the index usable: set it aside if unreadable or of another schema
+        version, then create the schema if absent.
+
+        Setting aside is safe only because the index is derived: `_catch_up`
+        then replays the whole journal into an empty one. The old file is kept,
+        not deleted, in case the journal turns out to be the thing that is wrong.
+        Page-level damage that a header read does not reach is `verify()`'s job.
+        """
+        try:
+            version = self.conn.execute("PRAGMA user_version").fetchone()[0]
+            exists = self.conn.execute(
+                "SELECT 1 FROM sqlite_master WHERE name = 'labels'").fetchone() is not None
+            reason = (f"schema version {version}, expected {INDEX_VERSION}"
+                      if exists and version != INDEX_VERSION else None)
         except sqlite3.DatabaseError as e:
-            ok, reason = False, str(e)
-        else:
-            reason = "quick_check failed"
-        if not ok:
-            conn.close()
-            aside = path.with_name(f"{path.name}.damaged-{int(time.time() * 1000)}")
-            log.error("label index %s is damaged (%s); moved to %s and rebuilding from %s",
-                      path, reason, aside.name, label_journal.JOURNAL_NAME)
-            path.rename(aside)
-            for suffix in ("-journal", "-wal", "-shm"):
-                side = path.with_name(path.name + suffix)
-                if side.exists():
-                    side.rename(aside.with_name(aside.name + suffix))
-            conn = sqlite3.connect(path, isolation_level=None)
-        conn.executescript(LABELS_SCHEMA + STATE_SCHEMA)
-        return conn
+            reason = f"unreadable: {e}"
+        if reason:
+            self._set_aside(reason)
+            version = 0
+        self.conn.executescript(LABELS_SCHEMA + STATE_SCHEMA)
+        # Only when it differs: writing the header even with the same value
+        # touches the file, and a store that refuses to open must leave the
+        # index byte-for-byte as it found it.
+        if version != INDEX_VERSION:
+            self.conn.execute(f"PRAGMA user_version = {INDEX_VERSION}")
+
+    def _set_aside(self, reason: str) -> None:
+        """Move the index (and any SQLite side files) aside and reconnect to an empty one."""
+        self.conn.close()
+        path = self.dir / LABELS_DB_NAME
+        aside = path.with_name(f"{path.name}.aside-{int(time.time() * 1000)}")
+        log.error("label index %s set aside (%s) as %s; rebuilding from %s",
+                  path, reason, aside.name, label_journal.JOURNAL_NAME)
+        path.rename(aside)
+        for suffix in ("-journal", "-wal", "-shm"):
+            side = path.with_name(path.name + suffix)
+            if side.exists():
+                side.rename(aside.with_name(aside.name + suffix))
+        self.conn = sqlite3.connect(path, isolation_level=None)
 
     def _catch_up(self) -> None:
         """

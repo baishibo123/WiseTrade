@@ -53,6 +53,8 @@ def locked(labels_dir: Path) -> Iterator[None]:
 if os.name == "nt":  # pragma: no cover - exercised on Windows only
     import msvcrt
 
+    _F_FULLFSYNC = None
+
     def _lock(f) -> None:
         f.seek(0)
         msvcrt.locking(f.fileno(), msvcrt.LK_LOCK, 1)
@@ -63,11 +65,26 @@ if os.name == "nt":  # pragma: no cover - exercised on Windows only
 else:
     import fcntl
 
+    _F_FULLFSYNC = getattr(fcntl, "F_FULLFSYNC", None)   # macOS only
+
     def _lock(f) -> None:
         fcntl.flock(f.fileno(), fcntl.LOCK_EX)
 
     def _unlock(f) -> None:
         fcntl.flock(f.fileno(), fcntl.LOCK_UN)
+
+
+def _fsync(fd: int) -> None:
+    """
+    Flush to stable storage. On macOS `fsync()` only hands the data to the
+    drive, whose cache can still lose it on power loss; `F_FULLFSYNC` is the
+    call that waits for the medium. Without it, the "durable before commit"
+    ordering of ADR-028 does not hold on the machine this runs on.
+    """
+    if _F_FULLFSYNC is not None:
+        fcntl.fcntl(fd, _F_FULLFSYNC)
+    else:
+        os.fsync(fd)
 
 
 def size(labels_dir: Path) -> int:
@@ -90,7 +107,7 @@ def append(labels_dir: Path, op: dict[str, Any]) -> int:
     with open(labels_dir / JOURNAL_NAME, "ab") as f:
         f.write(line.encode("utf-8"))
         f.flush()
-        os.fsync(f.fileno())
+        _fsync(f.fileno())
         return f.tell()
 
 
@@ -130,7 +147,7 @@ def read_from(labels_dir: Path, offset: int, last_seq: int) -> list[tuple[dict[s
         with open(path, "r+b") as f:
             f.truncate(cut)
             f.flush()
-            os.fsync(f.fileno())
+            _fsync(f.fileno())
 
     out = []
     pos = offset

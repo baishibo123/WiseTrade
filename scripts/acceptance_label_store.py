@@ -28,7 +28,6 @@ import tempfile
 from pathlib import Path
 
 _TMP = Path(tempfile.mkdtemp(prefix="wisetrade-labels-acceptance-"))
-_REAL_LABELS_DIR = os.environ.get("WISETRADE_LABELS_DIR")
 os.environ["WISETRADE_LABELS_DIR"] = str(_TMP)
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
@@ -268,7 +267,7 @@ def main() -> int:
               f"set WISETRADE_SQLITE_DB_PATH, or build it with scripts/build_database.py",
               file=sys.stderr)
         return 2
-    if LABELS_DIR != _TMP or (_REAL_LABELS_DIR and Path(_REAL_LABELS_DIR) == _TMP):
+    if LABELS_DIR != _TMP:
         print(f"refusing to run: label store resolved to {LABELS_DIR}, not the temp dir", file=sys.stderr)
         return 2
     cal = TradingCalendar.load(sqlite3.connect(f"file:{SQLITE_DB_PATH}?mode=ro", uri=True))
