@@ -188,3 +188,23 @@ DEFAULT_MAX_LOOKBACK = 300
 # against an imagined API cannot detect that it imagined it, and the whole point
 # of the fixture is to be the thing that was actually served.
 FIXTURES_DIR = PROJECT_ROOT / "fixtures"
+
+# ============================================================================
+# Label store (database/label_store.py)
+# ============================================================================
+# Appended by feat/label-store. Labels are the only irreplaceable data in the
+# system, so they live outside every git working tree (ADR-027): worktrees are
+# recycled and `git clean -x` removes ignored files, and either would take a
+# store derived from PROJECT_ROOT with it. Environment only, with no default --
+# a default would give each worktree its own empty store, and a service that
+# starts against an empty store does not say the real one is elsewhere.
+#
+#   macOS:    export WISETRADE_LABELS_DIR=/Users/<you>/WiseTradeData/labels
+
+_LABELS_DIR_ENV = os.getenv("WISETRADE_LABELS_DIR")
+LABELS_DIR = Path(_LABELS_DIR_ENV) if _LABELS_DIR_ENV else None
+
+
+def require_labels_dir() -> Path:
+    """Validated LABELS_DIR. Call immediately before opening the label store."""
+    return _require_path(LABELS_DIR, "WISETRADE_LABELS_DIR", "the label store", expect_dir=True)

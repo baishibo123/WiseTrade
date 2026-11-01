@@ -16,3 +16,6 @@ context.txt
 # Labels are private and irreplaceable; the store lives outside the repo
 # (WISETRADE_LABELS_DIR, ADR-027). This guards against a copy landing here.
 labels/
+
+# Build metadata from `pip install -e .`
+*.egg-info/
