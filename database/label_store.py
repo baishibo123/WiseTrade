@@ -105,6 +105,10 @@ _FACTS = ("symbol", "anchor", "t_from_ms", "t_to_ms", "period", "rth",
           "label_type", "payload", "source", "created_at_ms")
 
 
+# The one label type the store gives meaning to (ADR-027): a human verdict on
+# another label, whose payload carries {target_id, verdict, round}.
+REVIEW_TYPE = "review"
+
 # What PATCH may change. Everything else is the observation itself (see update).
 _MUTABLE = frozenset({"label_type", "payload"})
 
@@ -206,6 +210,7 @@ class LabelStore:
             return o
 
         self._journalled(op)
+        self._warn_orphaned([label_id])
 
     def delete_where(
         self,
@@ -249,6 +254,7 @@ class LabelStore:
             return o
 
         self._journalled(op)
+        self._warn_orphaned(deleted)
         return deleted
 
     def restore(self, label_ids: list[int]) -> list[dict[str, Any]]:
@@ -353,6 +359,39 @@ class LabelStore:
             sql += " WHERE " + " AND ".join(where)
         sql += " ORDER BY t_from_ms, id"
         return [_to_dict(r) for r in self.conn.execute(sql, args)]
+
+    def orphan_reviews(self) -> list[dict[str, Any]]:
+        """
+        Reviews whose `target_id` names no live label, ascending by id.
+
+        `target_id` is a foreign key inside JSON, so nothing enforces it
+        (ADR-027). Orphans are expected, not errors: deleting model proposals
+        after a training round leaves their reviews behind on purpose, because a
+        rejection is the most informative supervision the loop produces and it
+        still carries the target's coordinates. `restore()` of the target
+        re-attaches them. A review with no usable `target_id` at all is listed
+        too -- that one is a malformed label, not an expected orphan.
+        """
+        sql = (f"SELECT {', '.join('r.' + c for c in _COLUMNS)} FROM labels r"
+               f" WHERE r.label_type = ? AND NOT EXISTS"
+               f" (SELECT 1 FROM labels t WHERE t.id = json_extract(r.payload, '$.target_id'))"
+               f" ORDER BY r.id")
+        return [_to_dict(r) for r in self.conn.execute(sql, (REVIEW_TYPE,))]
+
+    def _warn_orphaned(self, deleted_ids: list[int]) -> None:
+        """Say how many live reviews a deletion just left pointing at nothing."""
+        if not deleted_ids:
+            return
+        marks = ", ".join("?" * len(deleted_ids))
+        n = self.conn.execute(
+            f"SELECT COUNT(*) FROM labels WHERE label_type = ?"
+            f" AND json_extract(payload, '$.target_id') IN ({marks})",
+            (REVIEW_TYPE, *deleted_ids),
+        ).fetchone()[0]
+        if n:
+            log.warning("deleting %d label(s) orphaned %d review(s); they are kept as "
+                        "supervision and re-attach on restore (see orphan_reviews())",
+                        len(deleted_ids), n)
 
     # -- index maintenance (caller holds the journal lock) ----------------
 
