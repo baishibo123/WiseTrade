@@ -105,8 +105,16 @@ _FACTS = ("symbol", "anchor", "t_from_ms", "t_to_ms", "period", "rth",
           "label_type", "payload", "source", "created_at_ms")
 
 
+# What PATCH may change. Everything else is the observation itself (see update).
+_MUTABLE = frozenset({"label_type", "payload"})
+
+
 class LabelError(ValueError):
     """A label the store refuses. The message says which rule it broke."""
+
+
+class LabelNotFound(LookupError):
+    """No label with this id in the index -- never created, or deleted."""
 
 
 class LabelStore:
@@ -154,21 +162,74 @@ class LabelStore:
         cover = _coverage(self.cal, facts["t_from_ms"], facts["t_to_ms"],
                           facts["period"], facts["rth"])
 
+        def op() -> dict[str, Any]:
+            label_id = self._insert_row(None, facts, cover)
+            return {"op": "insert", "at_ms": facts["created_at_ms"], "id": label_id, "label": facts}
+
+        return self.get(self._journalled(op)["id"])
+
+    def update(self, label_id: int, patch: dict[str, Any]) -> dict[str, Any]:
+        """
+        Replace `label_type` and/or `payload` of one label; returns the label.
+
+        Those are the only mutable fields. `source` changes by review, never by
+        edit (ADR-027). `symbol`, `anchor`, the stamps, `period` and `rth` name
+        the bars that were judged; changing them is a different observation, so
+        it is a DELETE and a POST, both journalled. Fields are replaced whole:
+        a patched `payload` is the new payload, not merged into the old one.
+        """
+        bad = sorted(set(patch) - _MUTABLE)
+        if bad:
+            raise LabelError(
+                f"cannot patch {bad}: only {sorted(_MUTABLE)} are mutable. A label's "
+                f"bars are its identity (delete and re-create); its source changes by review."
+            )
+        if not patch:
+            raise LabelError("empty patch")
+
+        def op() -> dict[str, Any]:
+            before = self._facts(label_id)
+            o = {"op": "update", "at_ms": int(time.time() * 1000), "id": label_id,
+                 "before": before, "after": before | patch}
+            self._apply(o)
+            return o
+
+        self._journalled(op)
+        return self.get(label_id)
+
+    def delete(self, label_id: int) -> None:
+        """
+        Remove one label from the index. The journal keeps its before-image, so
+        the deletion is recorded and reversible, but no query can reach the row.
+        """
+        def op() -> dict[str, Any]:
+            o = {"op": "delete", "at_ms": int(time.time() * 1000), "id": label_id,
+                 "before": self._facts(label_id)}
+            self._apply(o)
+            return o
+
+        self._journalled(op)
+
+    def _journalled(self, make_op) -> dict[str, Any]:
+        """
+        The one write path. Under the lock and inside one transaction:
+        `make_op()` changes the index and returns the operation, which is then
+        appended and fsynced, and only then committed (ADR-028). Anything raised
+        before the append leaves both files untouched.
+        """
         with label_journal.locked(self.dir):
             self._catch_up()          # another process may have written since we opened
             seq, _ = self._state()
             self.conn.execute("BEGIN IMMEDIATE")
             try:
-                label_id = self._insert_row(None, facts, cover)
-                op = {"seq": seq + 1, "op": "insert", "at_ms": facts["created_at_ms"],
-                      "id": label_id, "label": facts}
+                op = {"seq": seq + 1, **make_op()}
                 end = label_journal.append(self.dir, op)
-                self._set_state(seq + 1, end)
+                self._set_state(op["seq"], end)
                 self.conn.execute("COMMIT")
             except BaseException:
                 self.conn.execute("ROLLBACK")
                 raise
-        return self.get(label_id)
+        return op
 
     # -- reads ------------------------------------------------------------
 
@@ -269,7 +330,7 @@ class LabelStore:
                 self._apply(op)
                 self._set_state(op["seq"], end)
                 self.conn.execute("COMMIT")
-            except (LabelError, sqlite3.Error, KeyError, TypeError) as e:
+            except (LabelError, LabelNotFound, sqlite3.Error, KeyError, TypeError) as e:
                 self.conn.execute("ROLLBACK")
                 raise JournalError(
                     f"journal seq {op['seq']} ({op.get('op')} id={op.get('id')}) cannot be "
@@ -278,12 +339,46 @@ class LabelStore:
             log.info("replayed journal seq %d (%s id=%s)", op["seq"], op["op"], op.get("id"))
 
     def _apply(self, op: dict[str, Any]) -> None:
-        if op["op"] == "insert":
+        """
+        Make the index reflect one journalled operation. Shared by live writes
+        and replay, so a write and its replay cannot diverge.
+
+        An update or delete first checks that the row still equals its
+        before-image. On a live write that is trivially true; on replay a
+        mismatch means the index and the journal disagree, and applying anyway
+        would make the disagreement permanent.
+        """
+        kind = op["op"]
+        if kind == "insert":
             f = op["label"]
-            cover = _coverage(self.cal, f["t_from_ms"], f["t_to_ms"], f["period"], f["rth"])
-            self._insert_row(op["id"], f, cover)
-        else:
-            raise LabelError(f"unknown journal operation {op['op']!r}")
+            self._insert_row(op["id"], f, _coverage(self.cal, f["t_from_ms"], f["t_to_ms"],
+                                                    f["period"], f["rth"]))
+            return
+        if kind not in ("update", "delete"):
+            raise LabelError(f"unknown journal operation {kind!r}")
+        current = self._facts(op["id"])
+        if current != op["before"]:
+            raise LabelError(f"label {op['id']} does not match the journal's before-image")
+        if kind == "delete":
+            self.conn.execute("DELETE FROM labels WHERE id = ?", (op["id"],))
+            return
+        f = op["after"]
+        cover = _coverage(self.cal, f["t_from_ms"], f["t_to_ms"], f["period"], f["rth"])
+        try:
+            self.conn.execute(
+                f"UPDATE labels SET {', '.join(f'{k} = ?' for k in _FACTS)},"
+                f" cover_from_ms = ?, cover_to_ms = ?, within_rth = ? WHERE id = ?",
+                (*_bind(f), *cover, op["id"]),
+            )
+        except sqlite3.IntegrityError as e:
+            raise LabelError(str(e)) from None
+
+    def _facts(self, label_id: int) -> dict[str, Any]:
+        """The contract fields of one label as the journal records them."""
+        d = self.get(label_id)
+        if d is None:
+            raise LabelNotFound(label_id)
+        return {k: d[k] for k in _FACTS}
 
     def _insert_row(self, label_id: Optional[int], f: dict[str, Any],
                     cover: tuple[int, int, int]) -> int:
@@ -292,7 +387,7 @@ class LabelStore:
             cur = self.conn.execute(
                 f"INSERT INTO labels (id, {', '.join(_FACTS)}, cover_from_ms, cover_to_ms, within_rth)"
                 f" VALUES ({', '.join('?' * (len(_FACTS) + 4))})",
-                (label_id, *(json.dumps(f[k]) if k == "payload" else f[k] for k in _FACTS), *cover),
+                (label_id, *_bind(f), *cover),
             )
         except sqlite3.IntegrityError as e:
             raise LabelError(str(e)) from None
@@ -352,6 +447,20 @@ def _coverage(cal: TradingCalendar, t_from_ms: Any, t_to_ms: Any,
     within = rth or (first is last and first.rth_open_ms <= cover_from
                      and cover_to <= first.rth_close_ms)
     return cover_from, cover_to, int(within)
+
+
+def _bind(f: dict[str, Any]) -> tuple:
+    """
+    A facts dict as SQL parameters, in `_FACTS` order. Every row write, live or
+    replayed, passes through here.
+
+    The str checks cannot be CHECK constraints: TEXT affinity converts 5 to '5'
+    before any CHECK sees it, so `typeof(label_type) = 'text'` always passes.
+    """
+    for k in ("symbol", "label_type"):
+        if not isinstance(f[k], str) or not f[k]:
+            raise LabelError(f"{k} must be a non-empty string, got {f[k]!r}")
+    return tuple(json.dumps(f[k]) if k == "payload" else f[k] for k in _FACTS)
 
 
 def _to_dict(r: tuple) -> dict[str, Any]:

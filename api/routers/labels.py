@@ -28,9 +28,6 @@ from .bars import _calendar, _connect as _connect_bars
 
 router = APIRouter(prefix="/labels", tags=["labels"])
 
-_TODO = "not implemented on main -- see branch feat/label-store"
-
-
 def _open() -> label_store.LabelStore:
     """
     One store per request: FastAPI runs sync endpoints in a threadpool and
@@ -113,11 +110,34 @@ def create_label(label: dict) -> dict:
 
 @router.patch("/{label_id}")
 def update_label(label_id: int, patch: dict) -> dict:
-    """Partial update of one label."""
-    raise HTTPException(501, _TODO)
+    """
+    Replace `label_type` and/or `payload` of one label; returns the label.
+
+    Those are the only mutable fields, and a field is replaced whole -- a
+    patched `payload` is not merged. Any other field is a 422: `source` changes
+    by review, never by edit (ADR-027), and the symbol, stamps, `period` and
+    `rth` name the bars that were judged, so changing them is a DELETE and a
+    POST. The before- and after-image are both journalled (ADR-028).
+    """
+    with _open() as store:
+        try:
+            return store.update(label_id, patch)
+        except label_store.LabelNotFound:
+            raise HTTPException(404, f"no label {label_id}") from None
+        except label_store.LabelError as e:
+            raise HTTPException(422, str(e)) from None
 
 
 @router.delete("/{label_id}", status_code=204)
 def delete_label(label_id: int) -> None:
-    """Remove one label."""
-    raise HTTPException(501, _TODO)
+    """
+    Remove one label. Real removal: no filter on GET can return it afterwards.
+
+    Not lost: the journal records its before-image, so the deletion is an
+    auditable, reversible operation rather than a gap in the history.
+    """
+    with _open() as store:
+        try:
+            store.delete(label_id)
+        except label_store.LabelNotFound:
+            raise HTTPException(404, f"no label {label_id}") from None
