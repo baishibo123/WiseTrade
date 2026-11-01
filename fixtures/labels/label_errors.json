@@ -1,0 +1,38 @@
+{
+  "name": "label_errors",
+  "note": "Error bodies are FastAPI's {\"detail\": str}. 422 when the store refuses a label or a patch, 404 for an unknown or deleted id. A stamp off the bar grid is refused, never snapped -- it means the timestamp did not come from a loaded bar.",
+  "route": "errors",
+  "params": {},
+  "response": {
+    "post_off_grid_stamp": {
+      "status": 422,
+      "body": {
+        "detail": "1704207660000 is not the end of a 5m bucket (rth=True); label stamps must be a bar's t_ms as served by /bars"
+      }
+    },
+    "post_missing_rth": {
+      "status": 422,
+      "body": {
+        "detail": "missing required field 'rth'"
+      }
+    },
+    "patch_source": {
+      "status": 422,
+      "body": {
+        "detail": "cannot patch ['source']: only ['label_type', 'payload'] are mutable. A label's bars are its identity (delete and re-create); its source changes by review."
+      }
+    },
+    "patch_deleted": {
+      "status": 404,
+      "body": {
+        "detail": "no label 10"
+      }
+    },
+    "delete_deleted": {
+      "status": 404,
+      "body": {
+        "detail": "no label 16"
+      }
+    }
+  }
+}

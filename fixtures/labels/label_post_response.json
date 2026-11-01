@@ -1,0 +1,25 @@
+{
+  "name": "label_post_response",
+  "note": "POST /labels returns 201 and the stored label, id and derived fields assigned.",
+  "route": "POST /labels",
+  "params": {},
+  "response": {
+    "id": 1,
+    "symbol": "AAPL",
+    "anchor": "interval",
+    "t_from_ms": 1704209100000,
+    "t_to_ms": 1704210300000,
+    "period": "5m",
+    "rth": true,
+    "label_type": "setup",
+    "payload": {
+      "pattern": "bull_flag",
+      "note": "tight consolidation after the open drive"
+    },
+    "source": "human",
+    "created_at_ms": 1767225601000,
+    "cover_from_ms": 1704208800000,
+    "cover_to_ms": 1704210300000,
+    "within_rth": true
+  }
+}

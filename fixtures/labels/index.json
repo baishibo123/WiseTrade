@@ -1,0 +1,86 @@
+{
+  "generated_from": "us_market_1min.sqlite",
+  "contract": "docs/interfaces.md",
+  "bar_fixtures": [
+    "bars_1d_one_session_5m",
+    "bars_5m_extended_hours"
+  ],
+  "cases": [
+    {
+      "name": "labels_day_all",
+      "file": "labels_day_all.json",
+      "route": "/labels",
+      "params": {
+        "symbol": "AAPL",
+        "t0_ms": 1704184200000,
+        "t1_ms": 1704243600000
+      },
+      "note": "Every label on AAPL 2024-01-02, extended-hours window, no source filter -- so human and model labels both come back, which is what a chart drawing both wants. Contains: a human interval and two human points; a 1d point and a 1m point; an rth=false 1h label with within_rth=false; five model proposals of which one is deleted; and five reviews. Review rules (ADR-027): a review is never drawn, it styles its target, highest id wins. #6 accepted, #7 rejected, #8 pending (no review), #9 rejected in round 1 then accepted in round 2. The review of #10 is an orphan: its target was deleted, so there is nothing to style and it draws nothing. #16 was deleted and is absent.",
+      "summary": "14 labels"
+    },
+    {
+      "name": "labels_day_human",
+      "file": "labels_day_human.json",
+      "route": "/labels",
+      "params": {
+        "symbol": "AAPL",
+        "t0_ms": 1704184200000,
+        "t1_ms": 1704243600000,
+        "source": "human"
+      },
+      "note": "source=human: ground truth only -- the human labels and every review.",
+      "summary": "10 labels"
+    },
+    {
+      "name": "labels_day_model",
+      "file": "labels_day_model.json",
+      "route": "/labels",
+      "params": {
+        "symbol": "AAPL",
+        "t0_ms": 1704184200000,
+        "t1_ms": 1704243600000,
+        "source": "model"
+      },
+      "note": "source=model: the live proposals. The deleted one is not here.",
+      "summary": "4 labels"
+    },
+    {
+      "name": "labels_morning_window",
+      "file": "labels_morning_window.json",
+      "route": "/labels",
+      "params": {
+        "symbol": "AAPL",
+        "t0_ms": 1704205800000,
+        "t1_ms": 1704214800000
+      },
+      "note": "A 5m chart showing 09:30-12:00. The 1d trend_day label is stamped 16:00 yet is returned, because the filter tests coverage (cover_from_ms, cover_to_ms], not the stamp. Draw a label on every loaded bar whose own bucket intersects its coverage. On an RTH view, hide labels with within_rth=false entirely rather than clipping them.",
+      "summary": "4 labels"
+    },
+    {
+      "name": "label_post_response",
+      "file": "label_post_response.json",
+      "route": "POST /labels",
+      "params": {},
+      "note": "POST /labels returns 201 and the stored label, id and derived fields assigned.",
+      "summary": "14 keys"
+    },
+    {
+      "name": "label_patch_response",
+      "file": "label_patch_response.json",
+      "route": "PATCH /labels/{id}",
+      "params": {
+        "label_id": 1
+      },
+      "note": "PATCH replaces payload whole; coverage and created_at_ms never change.",
+      "summary": "14 keys"
+    },
+    {
+      "name": "label_errors",
+      "file": "label_errors.json",
+      "route": "errors",
+      "params": {},
+      "note": "Error bodies are FastAPI's {\"detail\": str}. 422 when the store refuses a label or a patch, 404 for an unknown or deleted id. A stamp off the bar grid is refused, never snapped -- it means the timestamp did not come from a loaded bar.",
+      "summary": "5 keys"
+    }
+  ]
+}

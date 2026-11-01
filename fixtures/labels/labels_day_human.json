@@ -1,0 +1,206 @@
+{
+  "name": "labels_day_human",
+  "note": "source=human: ground truth only -- the human labels and every review.",
+  "route": "/labels",
+  "params": {
+    "symbol": "AAPL",
+    "t0_ms": 1704184200000,
+    "t1_ms": 1704243600000,
+    "source": "human"
+  },
+  "response": [
+    {
+      "id": 5,
+      "symbol": "AAPL",
+      "anchor": "point",
+      "t_from_ms": 1704207600000,
+      "t_to_ms": null,
+      "period": "1h",
+      "rth": false,
+      "label_type": "setup",
+      "payload": {
+        "pattern": "premarket_gap",
+        "note": "covers 09:00-10:00, so within_rth is false"
+      },
+      "source": "human",
+      "created_at_ms": 1767225605000,
+      "cover_from_ms": 1704204000000,
+      "cover_to_ms": 1704207600000,
+      "within_rth": false
+    },
+    {
+      "id": 1,
+      "symbol": "AAPL",
+      "anchor": "interval",
+      "t_from_ms": 1704209100000,
+      "t_to_ms": 1704210300000,
+      "period": "5m",
+      "rth": true,
+      "label_type": "setup",
+      "payload": {
+        "pattern": "bull_flag",
+        "note": "edited: flag broke out at 10:50"
+      },
+      "source": "human",
+      "created_at_ms": 1767225601000,
+      "cover_from_ms": 1704208800000,
+      "cover_to_ms": 1704210300000,
+      "within_rth": true
+    },
+    {
+      "id": 2,
+      "symbol": "AAPL",
+      "anchor": "point",
+      "t_from_ms": 1704210600000,
+      "t_to_ms": null,
+      "period": "5m",
+      "rth": true,
+      "label_type": "entry",
+      "payload": {
+        "side": "long"
+      },
+      "source": "human",
+      "created_at_ms": 1767225602000,
+      "cover_from_ms": 1704210300000,
+      "cover_to_ms": 1704210600000,
+      "within_rth": true
+    },
+    {
+      "id": 11,
+      "symbol": "AAPL",
+      "anchor": "interval",
+      "t_from_ms": 1704215100000,
+      "t_to_ms": 1704216000000,
+      "period": "5m",
+      "rth": true,
+      "label_type": "review",
+      "payload": {
+        "target_id": 6,
+        "verdict": "accept",
+        "round": 1
+      },
+      "source": "human",
+      "created_at_ms": 1767225611000,
+      "cover_from_ms": 1704214800000,
+      "cover_to_ms": 1704216000000,
+      "within_rth": true
+    },
+    {
+      "id": 3,
+      "symbol": "AAPL",
+      "anchor": "point",
+      "t_from_ms": 1704217860000,
+      "t_to_ms": null,
+      "period": "1m",
+      "rth": true,
+      "label_type": "entry",
+      "payload": {
+        "side": "short",
+        "note": "1m label; on a 5m chart it marks the bar containing it"
+      },
+      "source": "human",
+      "created_at_ms": 1767225603000,
+      "cover_from_ms": 1704217800000,
+      "cover_to_ms": 1704217860000,
+      "within_rth": true
+    },
+    {
+      "id": 12,
+      "symbol": "AAPL",
+      "anchor": "interval",
+      "t_from_ms": 1704218100000,
+      "t_to_ms": 1704218700000,
+      "period": "5m",
+      "rth": true,
+      "label_type": "review",
+      "payload": {
+        "target_id": 7,
+        "verdict": "reject",
+        "round": 1
+      },
+      "source": "human",
+      "created_at_ms": 1767225612000,
+      "cover_from_ms": 1704217800000,
+      "cover_to_ms": 1704218700000,
+      "within_rth": true
+    },
+    {
+      "id": 13,
+      "symbol": "AAPL",
+      "anchor": "interval",
+      "t_from_ms": 1704224100000,
+      "t_to_ms": 1704224700000,
+      "period": "5m",
+      "rth": true,
+      "label_type": "review",
+      "payload": {
+        "target_id": 9,
+        "verdict": "reject",
+        "round": 1
+      },
+      "source": "human",
+      "created_at_ms": 1767225613000,
+      "cover_from_ms": 1704223800000,
+      "cover_to_ms": 1704224700000,
+      "within_rth": true
+    },
+    {
+      "id": 14,
+      "symbol": "AAPL",
+      "anchor": "interval",
+      "t_from_ms": 1704224100000,
+      "t_to_ms": 1704224700000,
+      "period": "5m",
+      "rth": true,
+      "label_type": "review",
+      "payload": {
+        "target_id": 9,
+        "verdict": "accept",
+        "round": 2
+      },
+      "source": "human",
+      "created_at_ms": 1767225614000,
+      "cover_from_ms": 1704223800000,
+      "cover_to_ms": 1704224700000,
+      "within_rth": true
+    },
+    {
+      "id": 15,
+      "symbol": "AAPL",
+      "anchor": "point",
+      "t_from_ms": 1704227100000,
+      "t_to_ms": null,
+      "period": "5m",
+      "rth": true,
+      "label_type": "review",
+      "payload": {
+        "target_id": 10,
+        "verdict": "reject",
+        "round": 1
+      },
+      "source": "human",
+      "created_at_ms": 1767225615000,
+      "cover_from_ms": 1704226800000,
+      "cover_to_ms": 1704227100000,
+      "within_rth": true
+    },
+    {
+      "id": 4,
+      "symbol": "AAPL",
+      "anchor": "point",
+      "t_from_ms": 1704229200000,
+      "t_to_ms": null,
+      "period": "1d",
+      "rth": true,
+      "label_type": "trend_day",
+      "payload": {
+        "direction": "up"
+      },
+      "source": "human",
+      "created_at_ms": 1767225604000,
+      "cover_from_ms": 1704205800000,
+      "cover_to_ms": 1704229200000,
+      "within_rth": true
+    }
+  ]
+}

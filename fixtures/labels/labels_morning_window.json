@@ -1,0 +1,86 @@
+{
+  "name": "labels_morning_window",
+  "note": "A 5m chart showing 09:30-12:00. The 1d trend_day label is stamped 16:00 yet is returned, because the filter tests coverage (cover_from_ms, cover_to_ms], not the stamp. Draw a label on every loaded bar whose own bucket intersects its coverage. On an RTH view, hide labels with within_rth=false entirely rather than clipping them.",
+  "route": "/labels",
+  "params": {
+    "symbol": "AAPL",
+    "t0_ms": 1704205800000,
+    "t1_ms": 1704214800000
+  },
+  "response": [
+    {
+      "id": 5,
+      "symbol": "AAPL",
+      "anchor": "point",
+      "t_from_ms": 1704207600000,
+      "t_to_ms": null,
+      "period": "1h",
+      "rth": false,
+      "label_type": "setup",
+      "payload": {
+        "pattern": "premarket_gap",
+        "note": "covers 09:00-10:00, so within_rth is false"
+      },
+      "source": "human",
+      "created_at_ms": 1767225605000,
+      "cover_from_ms": 1704204000000,
+      "cover_to_ms": 1704207600000,
+      "within_rth": false
+    },
+    {
+      "id": 1,
+      "symbol": "AAPL",
+      "anchor": "interval",
+      "t_from_ms": 1704209100000,
+      "t_to_ms": 1704210300000,
+      "period": "5m",
+      "rth": true,
+      "label_type": "setup",
+      "payload": {
+        "pattern": "bull_flag",
+        "note": "edited: flag broke out at 10:50"
+      },
+      "source": "human",
+      "created_at_ms": 1767225601000,
+      "cover_from_ms": 1704208800000,
+      "cover_to_ms": 1704210300000,
+      "within_rth": true
+    },
+    {
+      "id": 2,
+      "symbol": "AAPL",
+      "anchor": "point",
+      "t_from_ms": 1704210600000,
+      "t_to_ms": null,
+      "period": "5m",
+      "rth": true,
+      "label_type": "entry",
+      "payload": {
+        "side": "long"
+      },
+      "source": "human",
+      "created_at_ms": 1767225602000,
+      "cover_from_ms": 1704210300000,
+      "cover_to_ms": 1704210600000,
+      "within_rth": true
+    },
+    {
+      "id": 4,
+      "symbol": "AAPL",
+      "anchor": "point",
+      "t_from_ms": 1704229200000,
+      "t_to_ms": null,
+      "period": "1d",
+      "rth": true,
+      "label_type": "trend_day",
+      "payload": {
+        "direction": "up"
+      },
+      "source": "human",
+      "created_at_ms": 1767225604000,
+      "cover_from_ms": 1704205800000,
+      "cover_to_ms": 1704229200000,
+      "within_rth": true
+    }
+  ]
+}
