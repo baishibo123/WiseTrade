@@ -5,8 +5,9 @@ Payload shape is frozen in `docs/interfaces.md`. The schema is deliberately open
 `label_type` is an open vocabulary and `payload` is an arbitrary JSON object, so
 a new kind of label needs no migration and no change to these routes.
 
-    routers/labels.py ──► database/label_store.py ──► labels.sqlite (WISETRADE_LABELS_DIR)
-                      └─► routers/bars.py:_calendar  (session calendar, for coverage)
+    routers/labels.py ──► database/label_store.LabelStore ──► labels.jsonl + labels.sqlite
+                      └─► routers/bars.py:_calendar           (WISETRADE_LABELS_DIR)
+                          (session calendar, for coverage)
 
 Storage rules live in `database/label_store.py`. This module is transport: it
 owns the connection and maps store errors onto HTTP status codes.
@@ -14,7 +15,6 @@ owns the connection and maps store errors onto HTTP status codes.
 
 from __future__ import annotations
 
-import sqlite3
 from contextlib import closing
 
 from fastapi import APIRouter, HTTPException, Query
@@ -31,18 +31,22 @@ router = APIRouter(prefix="/labels", tags=["labels"])
 _TODO = "not implemented on main -- see branch feat/label-store"
 
 
-def _connect() -> sqlite3.Connection:
+def _open() -> label_store.LabelStore:
     """
-    One connection per request: FastAPI runs sync endpoints in a threadpool and
-    `sqlite3` connections are not shareable across threads.
+    One store per request: FastAPI runs sync endpoints in a threadpool and
+    `sqlite3` connections are not shareable across threads. Opening replays any
+    journal lines another process appended since, so every request sees them.
 
     An unset or missing WISETRADE_LABELS_DIR is a 503, not an empty result. The
     store has no default location by design (ADR-027), and answering `[]` would
-    look exactly like "no labels yet".
+    look exactly like "no labels yet". A journal that cannot be replayed is a
+    503 for the same reason: serving the stale index would hide it (ADR-028).
     """
+    with closing(_connect_bars()) as bars_conn:
+        cal = _calendar(bars_conn)
     try:
-        return label_store.connect()
-    except (RuntimeError, FileNotFoundError) as e:
+        return label_store.LabelStore(cal)
+    except (RuntimeError, FileNotFoundError) as e:   # JournalError is a RuntimeError
         raise HTTPException(503, str(e)) from None
 
 
@@ -74,9 +78,9 @@ def list_labels(
     covers minutes before its own `t_ms`, and over-fetching is harmless where
     under-fetching drops a label at the left edge.
     """
-    with closing(_connect()) as conn:
-        return label_store.query_labels(
-            conn, source=source, symbol=symbol, t0_ms=t0_ms, t1_ms=t1_ms,
+    with _open() as store:
+        return store.query(
+            source=source, symbol=symbol, t0_ms=t0_ms, t1_ms=t1_ms,
             period=period, rth=rth, label_type=label_type,
         )
 
@@ -100,11 +104,9 @@ def create_label(label: dict) -> dict:
     assigned by the store and ignored if sent. A label the store refuses is a
     422 naming the rule it broke.
     """
-    with closing(_connect()) as conn:
-        with closing(_connect_bars()) as bars_conn:
-            cal = _calendar(bars_conn)
+    with _open() as store:
         try:
-            return label_store.insert_label(conn, label, cal)
+            return store.insert(label)
         except label_store.LabelError as e:
             raise HTTPException(422, str(e)) from None
 
