@@ -88,6 +88,7 @@ pathing here means deriving from `PROJECT_ROOT` or reading the environment.
 | `WISETRADE_RAW_DATA_ROOT` | Root of the raw 1-minute CSV tree (ingest only) |
 | `WISETRADE_SPLITS_CSV` | Corporate-splits CSV (ingest only) |
 | `WISETRADE_SQLITE_DB_PATH` | Override the bar database; defaults to `data/` under the repo |
+| `WISETRADE_LABELS_DIR` | Label store directory, outside every working tree; required, no default — see ADR-027 |
 | `WISETRADE_DB_TYPE` | `sqlite` (default) or `postgresql` |
 | `WISETRADE_MP_START_METHOD` | `spawn` (default) or `fork` — see ADR-015 |
 
