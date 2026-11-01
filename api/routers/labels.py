@@ -6,6 +6,7 @@ Payload shape is frozen in `docs/interfaces.md`. The schema is deliberately open
 a new kind of label needs no migration and no change to these routes.
 
     routers/labels.py ──► database/label_store.py ──► labels.sqlite (WISETRADE_LABELS_DIR)
+                      └─► routers/bars.py:_calendar  (session calendar, for coverage)
 
 Storage rules live in `database/label_store.py`. This module is transport: it
 owns the connection and maps store errors onto HTTP status codes.
@@ -19,6 +20,11 @@ from contextlib import closing
 from fastapi import APIRouter, HTTPException, Query
 
 from database import label_store
+
+# The bar router's calendar cache and read-only connection, reused rather than
+# copied: one process-wide calendar, one place that validates it. Coverage has
+# to be computed on exactly the grid /bars serves, so sharing it is the point.
+from .bars import _calendar, _connect as _connect_bars
 
 router = APIRouter(prefix="/labels", tags=["labels"])
 
@@ -61,9 +67,12 @@ def list_labels(
     rather than left to this comment. A consumer that wants ground truth must
     ask for `source=human`.
 
-    The time filter is overlap: a label is returned when any part of it lies in
-    `[t0_ms, t1_ms]`, both bounds inclusive as in `/bars`. An interval that
-    starts before `t0_ms` and ends inside the window is returned.
+    The time filter is overlap of the label's coverage `(cover_from_ms,
+    cover_to_ms]` with the instants `[t0_ms, t1_ms]`, so a label made on any
+    period is found from any other. A chart wanting every label touching its
+    loaded bars should pass `t0_ms = first_bar.t_ms - period`: the first bucket
+    covers minutes before its own `t_ms`, and over-fetching is harmless where
+    under-fetching drops a label at the left edge.
     """
     with closing(_connect()) as conn:
         return label_store.query_labels(
@@ -92,8 +101,10 @@ def create_label(label: dict) -> dict:
     422 naming the rule it broke.
     """
     with closing(_connect()) as conn:
+        with closing(_connect_bars()) as bars_conn:
+            cal = _calendar(bars_conn)
         try:
-            return label_store.insert_label(conn, label)
+            return label_store.insert_label(conn, label, cal)
         except label_store.LabelError as e:
             raise HTTPException(422, str(e)) from None
 
