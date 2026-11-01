@@ -159,11 +159,8 @@ class LabelStore:
         facts = {k: label.get(k) for k in _FACTS}
         facts["payload"] = label.get("payload", {})
         facts["created_at_ms"] = int(time.time() * 1000)
-        cover = _coverage(self.cal, facts["t_from_ms"], facts["t_to_ms"],
-                          facts["period"], facts["rth"])
-
         def op() -> dict[str, Any]:
-            label_id = self._insert_row(None, facts, cover)
+            label_id = self._insert_row(None, facts)
             return {"op": "insert", "at_ms": facts["created_at_ms"], "id": label_id, "label": facts}
 
         return self.get(self._journalled(op)["id"])
@@ -203,26 +200,101 @@ class LabelStore:
         the deletion is recorded and reversible, but no query can reach the row.
         """
         def op() -> dict[str, Any]:
-            o = {"op": "delete", "at_ms": int(time.time() * 1000), "id": label_id,
-                 "before": self._facts(label_id)}
+            o = {"op": "delete", "at_ms": int(time.time() * 1000),
+                 "labels": [{"id": label_id, "before": self._facts(label_id)}]}
             self._apply(o)
             return o
 
         self._journalled(op)
 
-    def _journalled(self, make_op) -> dict[str, Any]:
+    def delete_where(
+        self,
+        *,
+        source: Optional[str],
+        symbol: Optional[str] = None,
+        t0_ms: Optional[int] = None,
+        t1_ms: Optional[int] = None,
+        period: Optional[str] = None,
+        rth: Optional[bool] = None,
+        label_type: Optional[str] = None,
+    ) -> list[int]:
+        """
+        Delete every label `query()` would return for the same filters, as ONE
+        journal operation; returns the deleted ids, ascending.
+
+        One operation, so a crash deletes all of them or none -- replay never
+        leaves a batch half applied. The filter is journalled with the
+        before-images, so the record says why each label went, and
+        `restore(ids)` undoes the whole batch with the original ids.
+
+        `source` has no default, as in `query()`: clearing model proposals must
+        say `source="model"`. Calling with no filter at all is refused rather
+        than read as "delete everything".
+        """
+        filters = {"source": source, "symbol": symbol, "t0_ms": t0_ms, "t1_ms": t1_ms,
+                   "period": period, "rth": rth, "label_type": label_type}
+        filters = {k: v for k, v in filters.items() if v is not None}
+        if not filters:
+            raise LabelError("refusing to delete with no filter; that would be every label")
+        deleted: list[int] = []
+
+        def op() -> Optional[dict[str, Any]]:
+            ids = sorted(r["id"] for r in self.query(**{"source": None, **filters}))
+            if not ids:
+                return None
+            o = {"op": "delete", "at_ms": int(time.time() * 1000), "filter": filters,
+                 "labels": [{"id": i, "before": self._facts(i)} for i in ids]}
+            self._apply(o)
+            deleted.extend(ids)
+            return o
+
+        self._journalled(op)
+        return deleted
+
+    def restore(self, label_ids: list[int]) -> list[dict[str, Any]]:
+        """
+        Bring deleted labels back with their original ids, as ONE operation.
+
+        The original id matters: a review points at its target by `target_id`
+        (ADR-027), and a restored proposal under a new id would orphan every
+        verdict on it. Each label returns as it was when deleted -- including
+        any PATCH before the deletion -- and its coverage is recomputed.
+
+        Every id must currently be deleted. An id that is live, or that the
+        journal has never seen, refuses the whole call.
+        """
+        ids = sorted(set(label_ids))
+        if not ids:
+            raise LabelError("nothing to restore")
+
+        def op() -> dict[str, Any]:
+            images = self._deleted_images(ids)
+            o = {"op": "restore", "at_ms": int(time.time() * 1000),
+                 "labels": [{"id": i, "label": images[i]} for i in ids]}
+            self._apply(o)
+            return o
+
+        self._journalled(op)
+        return [self.get(i) for i in ids]
+
+    def _journalled(self, make_op) -> Optional[dict[str, Any]]:
         """
         The one write path. Under the lock and inside one transaction:
         `make_op()` changes the index and returns the operation, which is then
         appended and fsynced, and only then committed (ADR-028). Anything raised
-        before the append leaves both files untouched.
+        before the append leaves both files untouched. `make_op()` may return
+        None when there is nothing to do, and then nothing is journalled.
         """
         with label_journal.locked(self.dir):
             self._catch_up()          # another process may have written since we opened
             seq, _ = self._state()
             self.conn.execute("BEGIN IMMEDIATE")
             try:
-                op = {"seq": seq + 1, **make_op()}
+                body = make_op()
+                if body is None:      # nothing matched: journal nothing
+                    self.conn.execute("ROLLBACK")
+                    return None
+                op = {"seq": seq + 1, **body}
                 end = label_journal.append(self.dir, op)
                 self._set_state(op["seq"], end)
                 self.conn.execute("COMMIT")
@@ -350,18 +422,20 @@ class LabelStore:
         """
         kind = op["op"]
         if kind == "insert":
-            f = op["label"]
-            self._insert_row(op["id"], f, _coverage(self.cal, f["t_from_ms"], f["t_to_ms"],
-                                                    f["period"], f["rth"]))
+            self._insert_row(op["id"], op["label"])
             return
-        if kind not in ("update", "delete"):
-            raise LabelError(f"unknown journal operation {kind!r}")
-        current = self._facts(op["id"])
-        if current != op["before"]:
-            raise LabelError(f"label {op['id']} does not match the journal's before-image")
+        if kind == "restore":
+            for item in op["labels"]:
+                self._insert_row(item["id"], item["label"])
+            return
         if kind == "delete":
-            self.conn.execute("DELETE FROM labels WHERE id = ?", (op["id"],))
+            for item in op["labels"]:
+                self._check_before(item["id"], item["before"])
+                self.conn.execute("DELETE FROM labels WHERE id = ?", (item["id"],))
             return
+        if kind != "update":
+            raise LabelError(f"unknown journal operation {kind!r}")
+        self._check_before(op["id"], op["before"])
         f = op["after"]
         cover = _coverage(self.cal, f["t_from_ms"], f["t_to_ms"], f["period"], f["rth"])
         try:
@@ -373,6 +447,36 @@ class LabelStore:
         except sqlite3.IntegrityError as e:
             raise LabelError(str(e)) from None
 
+    def _check_before(self, label_id: int, before: dict[str, Any]) -> None:
+        if self._facts(label_id) != before:
+            raise LabelError(f"label {label_id} does not match the journal's before-image")
+
+    def _deleted_images(self, ids: list[int]) -> dict[int, dict[str, Any]]:
+        """
+        The before-image each id had when last deleted, read from the journal.
+
+        A full read of the journal: restore is rare, and the journal -- not the
+        index, which has already forgotten the row -- is the only place the
+        label still exists.
+        """
+        state: dict[int, Optional[dict[str, Any]]] = {}   # id -> image if deleted, None if live
+        for op, _ in label_journal.read_from(self.dir, 0, 0):
+            if op["op"] in ("insert", "update"):
+                state[op["id"]] = None
+            elif op["op"] == "restore":
+                for item in op["labels"]:
+                    state[item["id"]] = None
+            elif op["op"] == "delete":
+                for item in op["labels"]:
+                    state[item["id"]] = item["before"]
+        unknown = [i for i in ids if i not in state]
+        if unknown:
+            raise LabelNotFound(f"the journal has never seen label(s) {unknown}")
+        live = [i for i in ids if state[i] is None]
+        if live:
+            raise LabelError(f"label(s) {live} are not deleted; nothing to restore")
+        return {i: state[i] for i in ids}
+
     def _facts(self, label_id: int) -> dict[str, Any]:
         """The contract fields of one label as the journal records them."""
         d = self.get(label_id)
@@ -380,9 +484,12 @@ class LabelStore:
             raise LabelNotFound(label_id)
         return {k: d[k] for k in _FACTS}
 
-    def _insert_row(self, label_id: Optional[int], f: dict[str, Any],
-                    cover: tuple[int, int, int]) -> int:
-        """INSERT one row; `label_id` is None for a new label, the journalled id on replay."""
+    def _insert_row(self, label_id: Optional[int], f: dict[str, Any]) -> int:
+        """
+        INSERT one row with freshly computed coverage. `label_id` is None for a
+        new label and the journalled id on replay or restore.
+        """
+        cover = _coverage(self.cal, f["t_from_ms"], f["t_to_ms"], f["period"], f["rth"])
         try:
             cur = self.conn.execute(
                 f"INSERT INTO labels (id, {', '.join(_FACTS)}, cover_from_ms, cover_to_ms, within_rth)"
