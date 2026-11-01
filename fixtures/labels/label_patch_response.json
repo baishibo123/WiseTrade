@@ -1,0 +1,27 @@
+{
+  "name": "label_patch_response",
+  "note": "PATCH replaces payload whole; coverage and created_at_ms never change.",
+  "route": "PATCH /labels/{id}",
+  "params": {
+    "label_id": 1
+  },
+  "response": {
+    "id": 1,
+    "symbol": "AAPL",
+    "anchor": "interval",
+    "t_from_ms": 1704209100000,
+    "t_to_ms": 1704210300000,
+    "period": "5m",
+    "rth": true,
+    "label_type": "setup",
+    "payload": {
+      "pattern": "bull_flag",
+      "note": "edited: flag broke out at 10:50"
+    },
+    "source": "human",
+    "created_at_ms": 1767225601000,
+    "cover_from_ms": 1704208800000,
+    "cover_to_ms": 1704210300000,
+    "within_rth": true
+  }
+}

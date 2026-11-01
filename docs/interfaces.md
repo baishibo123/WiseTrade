@@ -110,10 +110,15 @@ without a migration.
   "t_from_ms":     1751414400000,
   "t_to_ms":       null,         // null when anchor == "point"
   "period":        "5m",
+  "rth":           true,         // the /bars `rth` the label was made on; required
   "label_type":    "setup",      // open vocabulary
   "payload":       {},           // open; type-specific
   "source":        "human",      // "human" | "model"
-  "created_at_ms": 1757462400000
+  "created_at_ms": 1757462400000,
+  // Derived by the store; read-only, ignored if sent.
+  "cover_from_ms": 1751414100000, // exclusive: clamped start of the first bucket
+  "cover_to_ms":   1751414400000, // inclusive: end of the last bucket
+  "within_rth":    true           // every covered minute is a regular-hours minute
 }
 ```
 
@@ -127,6 +132,39 @@ poisoning the training set in a way that cannot be detected or reversed afterwar
 **`period` is part of the observation, not metadata.** A pattern judged on 5m bars
 is not the same observation as one judged on 1m, and a model trained across both
 without the distinction is learning noise.
+
+**`rth` is part of the observation for the same reason.** Bucket alignment depends
+on it: at `"1h"` the bar ending 10:00 covers (09:30, 10:00] on an RTH chart and
+(09:00, 10:00] on an extended-hours chart, and `"1d"` is the regular session in one
+case and the whole extended session in the other. Without `rth`, a stored
+`(t_from_ms, period)` names two different bars and the one the user judged cannot
+be recovered. It is required with no default: a default would silently stamp RTH
+on a label made on an extended-hours chart. `GET /labels` accepts it as an
+optional filter.
+
+**Coverage is how a label crosses periods.** `t_from_ms` / `t_to_ms` are bucket
+ends, so they do not say where a label begins: a `"1d"` point stamped 16:00 covers
+the whole session. `(cover_from_ms, cover_to_ms]` is the 1-minute span the labelled
+buckets occupy, computed with the same session-clamped `bucket_span` that `/bars`
+uses. The single projection rule for drawing a label on a chart of any period: a bar
+is marked when its own bucket intersects the coverage. `GET /labels` filters on
+coverage, not on the stamps.
+
+**`within_rth` decides visibility in a regular-hours view, and hides rather than
+clips.** It is true for every `rth: true` label, and for an `rth: false` label only
+when its whole coverage lies inside one session's regular hours. A label whose
+coverage reaches into extended hours is not shown on an RTH chart at all: a pattern
+judged with the pre-market in view is not the same observation once it is cut off.
+
+A stamp that is not a bucket end on its session's grid for the label's `period` and
+`rth` is rejected with 422, never snapped.
+
+**In replay, the chart hides what has not happened yet.** `GET /labels` returns every
+label whose coverage overlaps the window, so an interval that began before the replay
+cursor comes back with its full `t_to_ms` and `cover_to_ms` -- where the judged
+pattern ends. A replaying chart must draw such a label only up to the cursor and must
+not reveal its end, its `payload` or its reviews until the cursor reaches `cover_to_ms`.
+The store does not trim: it serves the record, and the cursor is a property of the view.
 
 **`source` exists for the active-learning loop**: human labels are ground truth,
 model labels are proposals awaiting review. They must never be pooled.

@@ -1,0 +1,97 @@
+{
+  "name": "labels_day_model",
+  "note": "source=model: the live proposals. The deleted one is not here.",
+  "route": "/labels",
+  "params": {
+    "symbol": "AAPL",
+    "t0_ms": 1704184200000,
+    "t1_ms": 1704243600000,
+    "source": "model"
+  },
+  "response": [
+    {
+      "id": 6,
+      "symbol": "AAPL",
+      "anchor": "interval",
+      "t_from_ms": 1704215100000,
+      "t_to_ms": 1704216000000,
+      "period": "5m",
+      "rth": true,
+      "label_type": "setup",
+      "payload": {
+        "pattern": "bull_flag",
+        "conf": 0.91,
+        "model": "proto-v0",
+        "round": 1
+      },
+      "source": "model",
+      "created_at_ms": 1767225606000,
+      "cover_from_ms": 1704214800000,
+      "cover_to_ms": 1704216000000,
+      "within_rth": true
+    },
+    {
+      "id": 7,
+      "symbol": "AAPL",
+      "anchor": "interval",
+      "t_from_ms": 1704218100000,
+      "t_to_ms": 1704218700000,
+      "period": "5m",
+      "rth": true,
+      "label_type": "setup",
+      "payload": {
+        "pattern": "bull_flag",
+        "conf": 0.74,
+        "model": "proto-v0",
+        "round": 1
+      },
+      "source": "model",
+      "created_at_ms": 1767225607000,
+      "cover_from_ms": 1704217800000,
+      "cover_to_ms": 1704218700000,
+      "within_rth": true
+    },
+    {
+      "id": 8,
+      "symbol": "AAPL",
+      "anchor": "interval",
+      "t_from_ms": 1704221100000,
+      "t_to_ms": 1704222000000,
+      "period": "5m",
+      "rth": true,
+      "label_type": "setup",
+      "payload": {
+        "pattern": "bull_flag",
+        "conf": 0.68,
+        "model": "proto-v0",
+        "round": 1
+      },
+      "source": "model",
+      "created_at_ms": 1767225608000,
+      "cover_from_ms": 1704220800000,
+      "cover_to_ms": 1704222000000,
+      "within_rth": true
+    },
+    {
+      "id": 9,
+      "symbol": "AAPL",
+      "anchor": "interval",
+      "t_from_ms": 1704224100000,
+      "t_to_ms": 1704224700000,
+      "period": "5m",
+      "rth": true,
+      "label_type": "setup",
+      "payload": {
+        "pattern": "bull_flag",
+        "conf": 0.66,
+        "model": "proto-v0",
+        "round": 1
+      },
+      "source": "model",
+      "created_at_ms": 1767225609000,
+      "cover_from_ms": 1704223800000,
+      "cover_to_ms": 1704224700000,
+      "within_rth": true
+    }
+  ]
+}
