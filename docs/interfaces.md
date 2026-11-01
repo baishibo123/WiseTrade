@@ -110,6 +110,7 @@ without a migration.
   "t_from_ms":     1751414400000,
   "t_to_ms":       null,         // null when anchor == "point"
   "period":        "5m",
+  "rth":           true,         // the /bars `rth` the label was made on; required
   "label_type":    "setup",      // open vocabulary
   "payload":       {},           // open; type-specific
   "source":        "human",      // "human" | "model"
@@ -127,6 +128,15 @@ poisoning the training set in a way that cannot be detected or reversed afterwar
 **`period` is part of the observation, not metadata.** A pattern judged on 5m bars
 is not the same observation as one judged on 1m, and a model trained across both
 without the distinction is learning noise.
+
+**`rth` is part of the observation for the same reason.** Bucket alignment depends
+on it: at `"1h"` the bar ending 10:00 covers (09:30, 10:00] on an RTH chart and
+(09:00, 10:00] on an extended-hours chart, and `"1d"` is the regular session in one
+case and the whole extended session in the other. Without `rth`, a stored
+`(t_from_ms, period)` names two different bars and the one the user judged cannot
+be recovered. It is required with no default: a default would silently stamp RTH
+on a label made on an extended-hours chart. `GET /labels` accepts it as an
+optional filter.
 
 **`source` exists for the active-learning loop**: human labels are ground truth,
 model labels are proposals awaiting review. They must never be pooled.
