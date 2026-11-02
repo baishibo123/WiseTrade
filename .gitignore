@@ -24,3 +24,6 @@ labels.sqlite*
 
 # Build metadata from `pip install -e .`
 *.egg-info/
+
+# Per-machine Claude Code permissions
+.claude/settings.local.json
