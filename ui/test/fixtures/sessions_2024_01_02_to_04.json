@@ -1,0 +1,38 @@
+{
+  "name": "sessions_2024_01_02_to_04",
+  "note": "Sessions for the dates the shared bar and label fixtures use (2024-01-02 AAPL, 2024-01-04 AKAM), which fixtures/ has no /sessions payload for. Built from TradingCalendar.sessions_in_range(regular_hours_only=False) with the same field mapping as api/routers/bars.py:list_sessions, on the read-only bar database. ext_open_ms 04:01 ET is the first bar eob, so the extended-hours lower bound is 04:00.",
+  "route": "/sessions",
+  "params": {
+    "t0_ms": 1704085200000,
+    "t1_ms": 1704430800000
+  },
+  "response": [
+    {
+      "et_date": "2024-01-02",
+      "ext_open_ms": 1704186060000,
+      "rth_open_ms": 1704205800000,
+      "rth_close_ms": 1704229200000,
+      "ext_close_ms": 1704243600000,
+      "n_bars_rth": 390,
+      "is_half_day": false
+    },
+    {
+      "et_date": "2024-01-03",
+      "ext_open_ms": 1704272460000,
+      "rth_open_ms": 1704292200000,
+      "rth_close_ms": 1704315600000,
+      "ext_close_ms": 1704330000000,
+      "n_bars_rth": 390,
+      "is_half_day": false
+    },
+    {
+      "et_date": "2024-01-04",
+      "ext_open_ms": 1704358860000,
+      "rth_open_ms": 1704378600000,
+      "rth_close_ms": 1704402000000,
+      "ext_close_ms": 1704416400000,
+      "n_bars_rth": 390,
+      "is_half_day": false
+    }
+  ]
+}
