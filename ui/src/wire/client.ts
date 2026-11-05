@@ -8,7 +8,7 @@
  * empty chart, which would read as "no data here".
  */
 
-import type { Bar, EpochMs, Period, Session } from "./types";
+import type { Bar, EpochMs, Label, Period, Session } from "./types";
 
 const API_BASE: string = import.meta.env.VITE_WISETRADE_API ?? "http://127.0.0.1:8000";
 
@@ -71,3 +71,26 @@ export interface BarsQuery {
 }
 
 export const getBars = (q: BarsQuery): Promise<BarsPage> => getJson("/bars", { ...q });
+
+export interface LabelsQuery {
+  symbol: string;
+  t0_ms: EpochMs;
+  t1_ms: EpochMs;
+}
+
+/**
+ * Labels whose coverage overlaps `[t0_ms, t1_ms]`. Deliberately no other
+ * filter: a `period`, `rth`, `source` or `label_type` filter can drop a
+ * review's target while keeping the review, which then reads as an orphan.
+ * The chart filters on the client, where both halves are in view.
+ */
+export const getLabels = (q: LabelsQuery): Promise<Label[]> => getJson("/labels", { ...q });
+
+/** The routes a cursor driver reads. Tests substitute a fixture-backed one. */
+export interface Transport {
+  getBars(q: BarsQuery): Promise<BarsPage>;
+  getSessions(t0_ms: EpochMs, t1_ms: EpochMs): Promise<Session[]>;
+  getLabels(q: LabelsQuery): Promise<Label[]>;
+}
+
+export const http: Transport = { getBars, getSessions, getLabels };
