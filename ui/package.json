@@ -13,6 +13,8 @@
     "vitest": "5.0.5"
   },
   "dependencies": {
-    "lightweight-charts": "5.2.1"
+    "@preact/signals": "2.11.3",
+    "lightweight-charts": "5.2.1",
+    "preact": "11.0.1"
   }
 }
