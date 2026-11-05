@@ -19,6 +19,13 @@ import type { EpochMs, Period, SessionOpen } from "../wire/types";
 
 const MS_PER_MIN = 60_000;
 
+/**
+ * A session as the grid reads it: a whole `Session` in Browse, or the
+ * `SessionOpen` a blind view is limited to. `ext_close_ms`, when present, only
+ * tightens a check.
+ */
+export type GridSession = SessionOpen & { ext_close_ms?: EpochMs };
+
 export const PERIOD_MINUTES: Readonly<Record<Period, number>> = {
   "1m": 1,
   "2m": 2,
@@ -51,7 +58,7 @@ export function sessionLo(s: SessionOpen, rth: boolean): EpochMs {
  */
 export function sessionOf(
   t_ms: EpochMs,
-  sessions: readonly (SessionOpen & { ext_close_ms?: EpochMs })[],
+  sessions: readonly GridSession[],
   rth: boolean,
 ): SessionOpen {
   let lo = 0;
@@ -80,7 +87,7 @@ export function bucketStart(
   t_ms: EpochMs,
   period: Period,
   rth: boolean,
-  sessions: readonly (SessionOpen & { ext_close_ms?: EpochMs })[],
+  sessions: readonly GridSession[],
 ): EpochMs {
   const s = sessionOf(t_ms, sessions, rth);
   return Math.max(sessionLo(s, rth), t_ms - PERIOD_MINUTES[period] * MS_PER_MIN) as EpochMs;

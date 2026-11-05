@@ -11,6 +11,7 @@ import { describe, expect, it } from "vitest";
 
 import { bucketStart, sessionOf } from "../src/model/grid";
 import type { Bar, EpochMs, Label, Period, Session } from "../src/wire/types";
+import { barsOf as bars, labelsOf as labels, sessionsOf as sessions } from "./wire-fixtures";
 
 import bars1d5m from "../../fixtures/bars_1d_one_session_5m.json";
 import bars1hShort from "../../fixtures/bars_1h_short_first_bucket.json";
@@ -24,11 +25,6 @@ import sessGoogWeek from "../../fixtures/sessions_week_around_goog_gap.json";
 import labelsDayAll from "../../fixtures/labels/labels_day_all.json";
 import labelsMorning from "../../fixtures/labels/labels_morning_window.json";
 import sessJan from "./fixtures/sessions_2024_01_02_to_04.json";
-
-// Fixture JSON is typed by inference; the wire types are what the client sees.
-const sessions = (f: { response: unknown }) => f.response as Session[];
-const bars = (f: { response: { bars: unknown } }) => f.response.bars as Bar[];
-const labels = (f: { response: unknown }) => f.response as Label[];
 
 const MIN = 60_000;
 
